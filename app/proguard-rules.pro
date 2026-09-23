@@ -23,6 +23,10 @@
 # NO PDF!
 -keep class com.sigpher.nopdf.common.event.RecentPDFEvent { *; }
 
+# Gson 通过反射按字段名读写，字段名一旦被混淆，备份/还原与书签 JSON 就会失效
+-keep class com.sigpher.nopdf.common.bean.** { *; }
+-keep class com.sigpher.nopdf.preview.Bookmark { *; }
+
 # AndroidPdfViewer
 -keep class com.shockwave.**
 
@@ -90,9 +94,9 @@ public static java.lang.String TABLENAME;
 
 # 有了verbose这句话，混淆后就会生成映射文件
 # 包含有类名->混淆后类名的映射关系
-# 然后使用printmapping指定映射文件的名称
+# 映射文件由 AGP 输出到 build/outputs/mapping/<variant>/mapping.txt。
+# 不要再使用 -printmapping 写回源码目录，否则每次 release 构建都会污染工作区。
 -verbose
--printmapping proguardMapping.txt
 # 指定混淆时采用的算法，后面的参数是一个过滤器
 # 这个过滤器是谷歌推荐的算法，一般不改变
 -optimizations !code/simplification/cast,!field/*,!class/merging/*
@@ -273,17 +277,6 @@ public static java.lang.String TABLENAME;
   public *;
 }
 #-keepresourcexmlelements manifest/application/meta-data@value=GlideModule
-
-# >>>>>>>>>>>> butterknife
--keep class butterknife.** { *; }
--dontwarn butterknife.internal.**
--keep class **$$ViewBinder { *; }
--keepclasseswithmembernames class * {
-    @butterknife.* <fields>;
-}
--keepclasseswithmembernames class * {
-    @butterknife.* <methods>;
-}
 
 # >>>>>>>>>>>> agentweb
 -keep class com.just.agentweb.** {

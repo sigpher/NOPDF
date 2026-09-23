@@ -40,7 +40,9 @@ public class UpdateOpenHelper extends DaoMaster.OpenHelper {
                 public void onDropAllTables(Database db, boolean ifExists) {
                     DaoMaster.dropAllTables(db, ifExists);
                 }
-            }, PDFDao.class, CollectionDao.class);
+                // 注意：onDropAllTables 会 Drop 掉 DaoMaster 中的全部表，
+                // 因此这里必须列出所有 Dao，否则未列出的表会被重建为空表（数据丢失）。
+            }, PDFDao.class, CollectionDao.class, RecentPDFDao.class);
         }
     }
 }

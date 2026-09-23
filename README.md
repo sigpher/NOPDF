@@ -5,7 +5,7 @@
 NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并导入手机上的 PDF 文件，按文件夹或自定义方式分组管理书架，支持竖屏/横屏、"点击翻页、音量键翻页、自动滚动"等多种阅读方式，并内置书签、目录、进度记忆、全文搜索、备份恢复等实用功能。
 
 - 包名：`com.sigpher.nopdf`
-- 当前版本：0.1.1（versionCode 2）
+- 当前版本：0.1.2（versionCode 3）
 - 支持系统：Android 5.0（API 21）及以上（targetSdk 28）
 - 支持语言：英文、简体中文、繁体中文
 
@@ -54,7 +54,7 @@ NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并�
 - 语言：Kotlin + Java 混编（Kotlin 1.3.61，使用 `kotlin-android-extensions` 合成视图）
 - 架构：手写 MVP（每个功能包包含 `XxxActivity`/`XxxFragment` + `XxxPresenter` + `I*Contract`）
 - 数据层：GreenDAO（SQLite ORM，schemaVersion 3）、`DBHelper`（DAO 访问）+ `DataManager`（内存缓存）
-- 视图绑定：ButterKnife；跨组件通信：EventBus
+- 视图绑定：Kotlin 合成视图（`kotlinx.android.synthetic`）；跨组件通信：EventBus
 - 渲染：基于 [AndroidPdfViewer](https://github.com/barteksc/AndroidPdfViewer) 的本地修改分支（模块 `android-pdf-viewer`，底层使用 PdfiumAndroid）
 - 基础组件：`com.aaron:base`（提供 `BaseActivity`/`BaseFragment`/`IContract` 等）
 
@@ -126,7 +126,6 @@ KEY_PASSWORD=<密钥密码>
 | RealtimeBlurView | mmin18 | 实时模糊背景 |
 | ParallaxBackLayout | anzewei | 滑动返回 |
 | greenDAO | greenrobot | SQLite ORM |
-| ButterKnife | JakeWharton | 视图绑定 |
 | Glide | bumptech | 图片加载 |
 | StatusBarUtil | Jaeger | 状态栏样式 |
 | EventBus | greenrobot | 组件通信 |

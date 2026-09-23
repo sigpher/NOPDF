@@ -13,16 +13,15 @@ Android PDF reader app ("NO PDF"), package `com.sigpher.nopdf`. Two Gradle modul
 
 ## Database (GreenDAO)
 
-- DAO codegen is **committed** in `app/src/main/java/com/aaron/nopdf/common/greendao/` (DaoMaster/DaoSession/PDFDao/CollectionDao/RecentPDFDao). Do not hand-edit generated files; regenerate after schema changes.
-- Schema version is set in the `greendao { schemaVersion 3 }` block of `app/build.gradle:82`.
-- Upgrades are non-destructive: `UpdateOpenHelper.onUpgrade` uses `MigrationHelper.migrate`. When bumping `schemaVersion`, add the changed DAO to the migration listener list there (currently only `PDFDao`, `CollectionDao`; others get dropped/recreated) and keep `common/bean/*` entities (annotated with `@Entity`) consistent.
-- `app/src/main/java/com/aaron/nopdf/common/greendao/MigrationHelper2.java` also exists — check both if touching migrations.
+- DAO codegen is **committed** in `app/src/main/java/com/sigpher/nopdf/common/greendao/` (DaoMaster/DaoSession/PDFDao/CollectionDao/RecentPDFDao). Do not hand-edit generated files; regenerate after schema changes.
+- Schema version is set in the `greendao { schemaVersion 3 }` block of `app/build.gradle`.
+- Upgrades are non-destructive: `UpdateOpenHelper.onUpgrade` uses `MigrationHelper.migrate`. Its `onDropAllTables` drops **every** table in `DaoMaster`, so all DAOs must be passed to the migrate call (currently `PDFDao`, `CollectionDao`, `RecentPDFDao`) — any DAO left out is recreated as an empty table.
 
 ## Code conventions / architecture
 
 - `resourcePrefix 'app'` is set in `app/build.gradle:19`: every new resource must be named `app_...`.
 - Hand-written MVP: each feature package (`main`, `preview`, `filepicker`, `about`, `settings`) holds `XxxActivity`, `XxxFragment`, `XxxPresenter`, and a `I*Contract`. `common/` holds shared code (`DBHelper`, `DataManager`, settings, beans, events, widgets).
-- `BaseActivity`/`BaseFragment`/`IContract` come from external dep `com.aaron:base:1.1.5-beta9` (not in this repo). View binding via ButterKnife; cross-component comms via EventBus; `DataManager` is the in-memory cache over `DBHelper`.
+- `BaseActivity`/`BaseFragment`/`IContract` come from external dep `com.aaron:base:1.1.5-beta9` (not in this repo). View binding via `kotlinx.android.synthetic` (ButterKnife was removed); cross-component comms via EventBus; `DataManager` is the in-memory cache over `DBHelper`.
 - Entrypoints: `main/MainActivity` (launcher); `preview/PreviewActivity` also handles `application/pdf` VIEW intents and imports files into the DB (`DBHelper.insert`).
 - Mixed Java + Kotlin with the old `kotlin-android-extensions` synthetic-view syntax; follow the existing style in each file.
 - NDK `abiFilters` in `app/build.gradle:29-33`: `armeabi`, `armeabi-v7a`, `arm64-v8a` only.

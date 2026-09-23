@@ -8,9 +8,6 @@ import android.widget.TextView
 import androidx.appcompat.widget.Toolbar
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import butterknife.BindView
-import butterknife.ButterKnife
-import butterknife.Unbinder
 import com.sigpher.nopdf.BuildConfig
 import com.sigpher.nopdf.R
 import com.sigpher.nopdf.common.CommonActivity

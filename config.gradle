@@ -1,6 +1,0 @@
-ext {
-    bugly = [
-            baseApkDir: "app-1204-17-20-17",
-            tinkerId  : "base-1.0.9"
-    ]
-}

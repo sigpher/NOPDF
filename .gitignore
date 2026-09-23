@@ -13,6 +13,9 @@ bin/
 gen/
 out/
 
+# ProGuard/R8 映射文件（由 proguard-rules.pro 的 -printmapping 生成，属构建产物）
+proguardMapping.txt
+
 # Gradle files
 .gradle/
 build/
