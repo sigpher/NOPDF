@@ -5,8 +5,12 @@ buildscript {
     ext.kotlin_version = '1.3.61'
     repositories {
         google()
+        mavenCentral()
         jcenter()
         maven { url 'https://dl.bintray.com/umsdk/release' }
+        // jcenter / dl.bintray.com 已下线，以下为可用替代源
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://plugins.gradle.org/m2' }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:3.4.1'
@@ -30,8 +34,11 @@ allprojects {
     repositories {
         google()
         jcenter()
+        mavenCentral()
         maven { url "https://jitpack.io" }
         maven { url 'https://dl.bintray.com/umsdk/release' }
+        // jcenter / dl.bintray.com 已下线，以下为可用替代源
+        maven { url 'https://maven.aliyun.com/repository/public' }
     }
 }
 
