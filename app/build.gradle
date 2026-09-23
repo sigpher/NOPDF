@@ -21,8 +21,8 @@ android {
         applicationId "com.sigpher.nopdf"
         minSdkVersion 21
         targetSdkVersion 28
-        versionCode 1
-        versionName "0.1.0"
+        versionCode 2
+        versionName "0.1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled true
 
@@ -52,8 +52,9 @@ android {
                 abortOnError false
             }
             manifestPlaceholders = [
-                    app_icon : '@drawable/app_ic_nopdf',
-                    app_name : '@string/app_name_en'
+                    app_icon      : '@mipmap/app_ic_launcher',
+                    app_icon_round: '@mipmap/app_ic_launcher_round',
+                    app_name      : '@string/app_name_en'
             ]
             minifyEnabled true
             shrinkResources true
@@ -64,8 +65,9 @@ android {
         debug {
             applicationIdSuffix '.dev'
             manifestPlaceholders = [
-                    app_icon : '@drawable/app_ic_nopdf_dev',
-                    app_name : '@string/app_name_dev'
+                    app_icon      : '@mipmap/app_ic_launcher_dev',
+                    app_icon_round: '@mipmap/app_ic_launcher_round_dev',
+                    app_name      : '@string/app_name_dev'
             ]
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
