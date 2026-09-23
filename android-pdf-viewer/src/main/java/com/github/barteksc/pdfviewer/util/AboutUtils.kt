@@ -10,8 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
-import com.blankj.utilcode.util.PathUtils
-import com.blankj.utilcode.util.StringUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -21,7 +19,7 @@ import java.io.IOException
  */
 internal object AboutUtils {
     fun openCoolApk(context: Context, selfPkg: String) {
-        if (!StringUtils.isEmpty(selfPkg)) {
+        if (selfPkg.isNotEmpty()) {
             try {
                 val coolApk = "com.coolapk.market"
                 val uri = Uri.parse("market://details?id=$selfPkg")
@@ -52,7 +50,7 @@ internal object AboutUtils {
     fun copyImageToDevice(
             context: Context,
             bitmap: Bitmap,
-            savePath: String = "${PathUtils.getExternalAppCachePath()}/nopdf-gift.jpg"
+            savePath: String = (context.externalCacheDir ?: context.cacheDir).absolutePath + "/nopdf-gift.jpg"
     ) {
         val file = File(savePath)
         file.mkdirs()

@@ -37,14 +37,11 @@ import com.github.barteksc.pdfviewer.PDFView.Configurator
 import com.google.gson.reflect.TypeToken
 import com.shockwave.pdfium.PdfDocument
 import com.shockwave.pdfium.PdfPasswordException
-import com.uber.autodispose.AutoDispose
-import com.uber.autodispose.android.lifecycle.AndroidLifecycleScopeProvider
-import io.reactivex.Observable
-import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.Disposable
-import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.app_activity_preview.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
@@ -55,7 +52,6 @@ import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.TimeUnit
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -170,7 +166,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     private var isVolumeControl = Settings.volumeControl
     private var contentFragInterface: IContentFragInterface? = null
     private var bkFragInterface: IBkFragInterface? = null
-    private var autoDisp: Disposable? = null // 自动滚动
+    private var autoScrollJob: Job? = null // 自动滚动
     private var isPause = false
     private var hideBar = false
     private val contentMap: MutableMap<Long, PdfDocument.Bookmark> = HashMap()
@@ -318,7 +314,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if ((keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP)
-                && autoDisp?.isDisposed == false) {
+                && autoScrollJob?.isActive == true) {
             exitFullScreen()
             showBar()
             return true
@@ -525,8 +521,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         // 阅读方式回原位
         app_ll_read_method.translationY = ScreenUtils.getScreenHeight().toFloat()
         app_ll_more.translationY = ScreenUtils.getScreenHeight().toFloat()
-        if (autoDisp?.isDisposed == false) {
-            autoDisp?.dispose()
+        if (autoScrollJob?.isActive == true) {
+            autoScrollJob?.cancel()
             sbScrollLevel.visibility = View.GONE
         }
     }
@@ -678,11 +674,11 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                                 View.GONE
                             else
                                 View.VISIBLE
-                    autoDisp = startAutoScroll()
+                    autoScrollJob = startAutoScroll()
                 }
             } else {
-                if (autoDisp?.isDisposed == false) {
-                    autoDisp?.dispose()
+                if (autoScrollJob?.isActive == true) {
+                    autoScrollJob?.cancel()
                 }
                 sbScrollLevel.visibility = View.GONE
             }
@@ -765,8 +761,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         app_tv_settings.setOnClickListener(object : OnClickListenerImpl() {
             override fun onViewClick(v: View, interval: Long) {
                 hideBar()
-                if (autoDisp?.isDisposed == false) {
-                    autoDisp?.dispose()
+                if (autoScrollJob?.isActive == true) {
+                    autoScrollJob?.cancel()
                 }
                 start(this@PreviewActivity, REQUEST_CODE_SETTINGS)
             }
@@ -781,9 +777,9 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         app_tv_horizontal.setOnClickListener {
             hideReadMethod()
             if (!Settings.swipeHorizontal) {
-                if (autoDisp?.isDisposed == false) {
+                if (autoScrollJob?.isActive == true) {
                     sbScrollLevel.visibility = View.GONE
-                    autoDisp?.dispose()
+                    autoScrollJob?.cancel()
                     UiManager.showCenterShort(R.string.app_horizontal_does_not_support_auto_scroll)
                     return@setOnClickListener
                 }
@@ -833,9 +829,9 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                         }
                         .start()
                 Settings.scrollLevel = (sbScrollLevel.progress + 1).toLong()
-                autoDisp?.dispose()
+                autoScrollJob?.cancel()
                 app_tv_auto_scroll.isSelected = true
-                autoDisp = startAutoScroll()
+                autoScrollJob = startAutoScroll()
             }
         })
         scale025.setOnClickListener(this)
@@ -887,24 +883,22 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         }
     }
 
-    private fun startAutoScroll(): Disposable {
-        return Observable.interval(Settings.scrollLevel, TimeUnit.MILLISECONDS)
-                .doOnDispose {
-                    app_tv_auto_scroll.isSelected = false
-                    isPause = false
-                }
-                .doOnSubscribe {
-                    app_tv_auto_scroll.isSelected = true
-                }
-                .subscribeOn(Schedulers.computation())
-                .observeOn(AndroidSchedulers.mainThread())
-                .`as`(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(this@PreviewActivity)))
-                .subscribe {
+    private fun startAutoScroll(): Job {
+        app_tv_auto_scroll.isSelected = true
+        return launch {
+            try {
+                while (isActive) {
+                    delay(Settings.scrollLevel)
                     if (!app_pdfview.isRecycled && !isPause) {
                         app_pdfview.moveRelativeTo(0f, OFFSET_Y)
                         app_pdfview.loadPageByOffset()
                     }
                 }
+            } finally {
+                app_tv_auto_scroll.isSelected = false
+                isPause = false
+            }
+        }
     }
 
     private fun showReadMethod() {
@@ -1174,7 +1168,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     }
 
     private fun judgeAutoScrollPause(): Boolean {
-        if (autoDisp?.isDisposed == false) {
+        if (autoScrollJob?.isActive == true) {
             isPause = if (toolbar?.alpha == 1.0f) {
                 hideBar()
                 enterFullScreen()

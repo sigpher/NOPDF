@@ -5,8 +5,6 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 
-import androidx.multidex.MultiDex;
-
 import com.sigpher.nopdf.common.greendao.DaoMaster;
 import com.sigpher.nopdf.common.statistic.Statistic;
 import com.sigpher.nopdf.common.utils.ShortcutUtils;
@@ -26,13 +24,6 @@ public class App extends Application {
 
     public static Context getContext() {
         return sContext;
-    }
-
-    @Override
-    protected void attachBaseContext(Context base) {
-        super.attachBaseContext(base);
-        MultiDex.install(base);
-//        tinker();
     }
 
     @Override

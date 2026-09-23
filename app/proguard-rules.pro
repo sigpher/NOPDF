@@ -27,6 +27,16 @@
 -keep class com.sigpher.nopdf.common.bean.** { *; }
 -keep class com.sigpher.nopdf.preview.Bookmark { *; }
 
+# 已在 app/build.gradle 中从 com.aaron:base 排除、且本应用完全未使用的可选能力簇
+# （http / webview / download / timer）。base 中少数被通用 keep 规则保留下来的类
+# 仍会引用它们，这里显式忽略缺失类告警。
+-dontwarn retrofit2.**
+-dontwarn okhttp3.**
+-dontwarn com.tencent.sonic.**
+-dontwarn com.liulishuo.okdownload.**
+-dontwarn io.reactivex.**
+-dontwarn com.uber.autodispose.**
+
 # AndroidPdfViewer
 -keep class com.shockwave.**
 

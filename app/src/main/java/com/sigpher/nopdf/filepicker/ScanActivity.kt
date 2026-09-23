@@ -31,13 +31,11 @@ import com.blankj.utilcode.util.SDCardUtils
 import com.blankj.utilcode.util.StringUtils
 import com.github.anzewei.parallaxbacklayout.ParallaxBack
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import io.reactivex.Observable
-import io.reactivex.ObservableEmitter
-import io.reactivex.ObservableOnSubscribe
-import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.app_activity_scan.*
 import kotlinx.android.synthetic.main.app_include_searchview.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -243,16 +241,15 @@ class ScanActivity : CommonActivity() {
         adapter?.registerAdapterDataObserver(dataObserver)
         app_rv_select.adapter = adapter
         scanDialog.show()
-        Observable.create(ObservableOnSubscribe { emitter: ObservableEmitter<Double?> -> emitter.onNext(traverseFile()) })
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-//                .`as`<ObservableSubscribeProxy<Double>>(AutoDispose.autoDisposable(AndroidLifecycleScopeProvider.from(this)))
-                .subscribe({
-                    if (btnStopScan?.isSelected == false) {
-                        scanDialog.dismiss()
-                        updateUI()
-                    }
-                }) { throwable: Throwable -> LogUtils.e(throwable.message) }
+        launch {
+            val result = withContext(Dispatchers.IO) { runCatching { traverseFile() } }
+            result.onSuccess {
+                if (btnStopScan?.isSelected == false) {
+                    scanDialog.dismiss()
+                    updateUI()
+                }
+            }.onFailure { LogUtils.e(it.message) }
+        }
     }
 
     private fun traverseFile(): Double {

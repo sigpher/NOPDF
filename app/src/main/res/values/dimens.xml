@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 目录树每一层的缩进（对应原先 AppTreeNode 容器样式的 paddingStart） -->
+    <dimen name="app_content_indent">16dp</dimen>
+</resources>
