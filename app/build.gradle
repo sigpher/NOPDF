@@ -18,11 +18,11 @@ android {
 
     resourcePrefix 'app'
     defaultConfig {
-        applicationId "com.aaron.yespdf"
+        applicationId "com.sigpher.nopdf"
         minSdkVersion 21
         targetSdkVersion 28
-        versionCode 32
-        versionName "2.2.3"
+        versionCode 1
+        versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled true
 
@@ -52,7 +52,7 @@ android {
                 abortOnError false
             }
             manifestPlaceholders = [
-                    app_icon : '@drawable/app_ic_yespdf',
+                    app_icon : '@drawable/app_ic_nopdf',
                     app_name : '@string/app_name_en'
             ]
             minifyEnabled true
@@ -64,7 +64,7 @@ android {
         debug {
             applicationIdSuffix '.dev'
             manifestPlaceholders = [
-                    app_icon : '@drawable/app_ic_yespdf_dev',
+                    app_icon : '@drawable/app_ic_nopdf_dev',
                     app_name : '@string/app_name_dev'
             ]
             minifyEnabled false
@@ -81,7 +81,7 @@ android {
 
 greendao {
     schemaVersion 3 // 数据库版本号
-    daoPackage 'com.aaron.yespdf.common.greendao' // 设置 DaoMaster、DaoSession、Dao包名
+    daoPackage 'com.sigpher.nopdf.common.greendao' // 设置 DaoMaster、DaoSession、Dao包名
     targetGenDir 'src/main/java' // 设置DaoMaster、DaoSession、Dao目录
     // targetGenDirTest：设置生成单元测试目录
     // generateTests：设置自动生成单元测试用例

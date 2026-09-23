@@ -33,7 +33,7 @@
 
     </androidx.appcompat.widget.Toolbar>
 
-    <com.aaron.yespdf.common.widgets.NewViewPager
+    <com.sigpher.nopdf.common.widgets.NewViewPager
         android:id="@+id/app_vp"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

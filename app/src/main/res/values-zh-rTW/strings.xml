@@ -66,7 +66,7 @@
     <string name="app_backup_completed">備份完成，總計：%d，失敗：%d</string>
     <string name="app_recovery_completed">恢復完成，總計：%d，失敗：%d</string>
     <string name="app_backup_select_must_not_be_empty">請先選擇分組</string>
-    <string name="app_backup_tips">1. 備份文件存放在 /storage/emulated/0/Android/data/com.aaron.yespdf/files 下，請移動到其他地方以免應用數據清除導致備份丟失\n2. 恢復文件時同樣將備份文件放在原始目錄下，然後點擊按鈕進行恢復\n3. 請不要編輯文件，以免造成數據損壞</string>
+    <string name="app_backup_tips">1. 備份文件存放在 /storage/emulated/0/Android/data/com.sigpher.nopdf/files 下，請移動到其他地方以免應用數據清除導致備份丟失\n2. 恢復文件時同樣將備份文件放在原始目錄下，然後點擊按鈕進行恢復\n3. 請不要編輯文件，以免造成數據損壞</string>
     <string name="app_about">關於</string>
     <string name="app_settings">設定</string>
     <string name="app_previous_chapter">上一章</string>
@@ -99,7 +99,7 @@
     <string name="app_lock_landscape">鎖定橫屏</string>
     <string name="app_export_image">導出圖片</string>
     <string name="app_clip">裁切</string>
-    <string name="app_export_image_succeed">導出成功，圖片存放在根目錄/Pictures/YESPDF</string>
+    <string name="app_export_image_succeed">導出成功，圖片存放在根目錄/Pictures/NOPDF</string>
     <string name="app_not_support_external_open">暫不支持外部資源</string>
 
     <string name="app_delete_completed">刪除成功</string>

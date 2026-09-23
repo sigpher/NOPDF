@@ -1,0 +1,431 @@
+@startuml
+
+title __MAIN's Class Diagram__\n
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      abstract class com.sigpher.nopdf.main.AbstractAdapter {
+          # checkArray : SparseBooleanArray
+          # commInterface : ICommInterface<T>
+          # context : Context
+          # inflater : LayoutInflater
+          # selectList : List<T>
+          # selectMode : boolean
+          # sourceList : List<T>
+          {static} - TYPE_EMPTY : int
+          + getItemCount()
+          + getItemViewType()
+          + onBindViewHolder()
+          + onBindViewHolder()
+          + onCreateViewHolder()
+          ~ AbstractAdapter()
+          {abstract} ~ bindHolder()
+          {abstract} ~ bindHolder()
+          ~ cancelSelect()
+          {abstract} ~ checkCurrent()
+          {abstract} ~ createHolder()
+          ~ handleCheckBox()
+          {abstract} ~ itemCount()
+          {abstract} ~ onTap()
+          ~ selectAll()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder {
+          {static} ~ DEFAULT_LAYOUT : int
+          ~ cb : CheckBox
+          ~ tvCount : TextView
+          ~ tvTitle : TextView
+          ~ CollectionHolder()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.AbstractAdapter.CoverHolder {
+          {static} ~ DEFAULT_LAYOUT : int
+          ~ cb : CheckBox
+          ~ ivCover : ImageView
+          ~ tvProgress : TextView
+          ~ tvTitle : TextView
+          ~ CoverHolder()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      interface com.sigpher.nopdf.main.AbstractAdapter.ICommInterface {
+          {abstract} + onSelect()
+          {abstract} + onStartOperation()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.AllAdapter {
+          - fm : FragmentManager
+          ~ AllAdapter()
+          ~ bindHolder()
+          ~ bindHolder()
+          ~ checkCurrent()
+          ~ createHolder()
+          ~ itemCount()
+          ~ onTap()
+          - setCover()
+          - setVisibility()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.AllDeleteEvent {
+          ~ dirList : List<String>
+          ~ AllDeleteEvent()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.AllFragment {
+          ~ rvAll : RecyclerView
+          - adapter : AbstractAdapter<Collection>
+          - collections : List<Collection>
+          - selectCollections : List<Collection>
+          - unbinder : Unbinder
+          + AllFragment()
+          + cancelSelect()
+          + delete()
+          + deleteDescription()
+          + onCreateView()
+          + onDestroyView()
+          + onPdfDeleteEvent()
+          + onResume()
+          + onSelect()
+          + onStartOperation()
+          + selectAll()
+          {static} ~ newInstance()
+          ~ update()
+          - initView()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.CollectionAdapter {
+          ~ CollectionAdapter()
+          ~ bindHolder()
+          ~ bindHolder()
+          ~ checkCurrent()
+          ~ createHolder()
+          ~ itemCount()
+          ~ onTap()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.CollectionFragment {
+          ~ ibtnCancel : ImageButton
+          ~ ibtnDelete : ImageButton
+          ~ ibtnSelectAll : ImageButton
+          ~ realtimeBlurView : RealtimeBlurView
+          ~ rvCollection : RecyclerView
+          ~ tvName : TextView
+          ~ tvTitle : TextView
+          ~ vgOperationBar : ViewGroup
+          {static} - BUNDLE_NAME : String
+          - deleteDialog : BottomSheetDialog
+          - name : String
+          - pdfList : List<PDF>
+          - selectPDFList : List<PDF>
+          - tvDeleteDescription : TextView
+          - unbinder : Unbinder
+          + cancelSelect()
+          + delete()
+          + deleteDescription()
+          + onCreate()
+          + onCreateView()
+          + onDestroyView()
+          + onResume()
+          + onSelect()
+          + onStart()
+          + onStartOperation()
+          + selectAll()
+          {static} ~ newInstance()
+          - createDeleteDialog()
+          - initView()
+          - setListener()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      interface com.sigpher.nopdf.main.IMainContract {
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      interface com.sigpher.nopdf.main.IMainContract.P {
+          {abstract} + insertPDF()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      interface com.sigpher.nopdf.main.IMainContract.V {
+          {abstract} + onHideLoading()
+          {abstract} + onShowLoading()
+          {abstract} + onShowMessage()
+          {abstract} + onUpdate()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      interface com.sigpher.nopdf.main.IOperation {
+          {abstract} + cancelSelect()
+          {abstract} + delete()
+          {abstract} + deleteDescription()
+          {abstract} + selectAll()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.MainActivity {
+          ~ ibtnCancel : ImageButton
+          ~ ibtnDelete : ImageButton
+          ~ ibtnSelectAll : ImageButton
+          ~ tabLayout : TabLayout
+          ~ tvTitle : TextView
+          ~ vgOperationBar : ViewGroup
+          {static} - SELECT_REQUEST_CODE : int
+          - deleteDialog : BottomSheetDialog
+          - fragmentPagerAdapter : FragmentPagerAdapter
+          - loadingDialog : Dialog
+          - pwMenu : PopupWindow
+          - receiveHotfix : boolean
+          - tvDeleteDescription : TextView
+          - unbinder : Unbinder
+          + attachP()
+          + onBackPressed()
+          + onCreateOptionsMenu()
+          + onHideLoading()
+          + onHotfixSuccess()
+          + onOptionsItemSelected()
+          + onShowLoading()
+          + onShowMessage()
+          + onUpdate()
+          # createToolbar()
+          # layoutId()
+          # onActivityResult()
+          # onCreate()
+          # onDestroy()
+          ~ finishOperation()
+          ~ selectResult()
+          ~ setOperation()
+          ~ startOperation()
+          - createDeleteDialog()
+          - initPwMenu()
+          - initView()
+          - setListener()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.MainFragmentAdapter {
+          {static} - TITLES : String[]
+          + getCount()
+          + getItem()
+          + getPageTitle()
+          ~ MainFragmentAdapter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.MainPresenter {
+          + detachV()
+          + insertPDF()
+          ~ MainPresenter()
+          - insertPDF()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.OperationBarHelper {
+          {static} ~ hide()
+          {static} ~ show()
+          - OperationBarHelper()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.OperationEvent {
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.PdfDeleteEvent {
+          ~ deleted : List<String>
+          ~ dir : String
+          ~ isEmpty : boolean
+          ~ PdfDeleteEvent()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.RecentAdapter {
+          ~ RecentAdapter()
+          ~ bindHolder()
+          ~ bindHolder()
+          ~ checkCurrent()
+          ~ createHolder()
+          ~ itemCount()
+          ~ onTap()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.RecentFragment {
+          ~ rvRecent : RecyclerView
+          - adapter : AbstractAdapter<PDF>
+          - recentPDFList : List<PDF>
+          - selectPDFList : List<PDF>
+          - unbinder : Unbinder
+          + RecentFragment()
+          + cancelSelect()
+          + delete()
+          + deleteDescription()
+          + onAllDeleteEvent()
+          + onCreateView()
+          + onDestroyView()
+          + onMaxRecentEvent()
+          + onPdfDeleteEvent()
+          + onRecentPDFEvent()
+          + onResume()
+          + onSelect()
+          + onStartOperation()
+          + selectAll()
+          {static} ~ newInstance()
+          - initData()
+          - initView()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.XGridDecoration {
+          + getItemOffsets()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace main {
+      class com.sigpher.nopdf.main.YGridDecoration {
+          + getItemOffsets()
+      }
+    }
+  }
+  
+
+  com.sigpher.nopdf.main.AbstractAdapter -up-|> androidx.recyclerview.widget.RecyclerView.Adapter
+  com.sigpher.nopdf.main.AbstractAdapter +-down- com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder
+  com.sigpher.nopdf.main.AbstractAdapter +-down- com.sigpher.nopdf.main.AbstractAdapter.CoverHolder
+  com.sigpher.nopdf.main.AbstractAdapter +-down- com.sigpher.nopdf.main.AbstractAdapter.ICommInterface
+  com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+  com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder o-- com.sigpher.nopdf.common.widgets.BorderImageView : ivCover1
+  com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder o-- com.sigpher.nopdf.common.widgets.BorderImageView : ivCover2
+  com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder o-- com.sigpher.nopdf.common.widgets.BorderImageView : ivCover3
+  com.sigpher.nopdf.main.AbstractAdapter.CollectionHolder o-- com.sigpher.nopdf.common.widgets.BorderImageView : ivCover4
+  com.sigpher.nopdf.main.AbstractAdapter.CoverHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+  com.sigpher.nopdf.main.AllAdapter -up-|> com.sigpher.nopdf.main.AbstractAdapter
+  com.sigpher.nopdf.main.AllFragment .up.|> com.sigpher.nopdf.main.AbstractAdapter.ICommInterface
+  com.sigpher.nopdf.main.AllFragment .up.|> com.sigpher.nopdf.main.IOperation
+  com.sigpher.nopdf.main.AllFragment -up-|> com.aaron.base.base.BaseFragment
+  com.sigpher.nopdf.main.CollectionAdapter -up-|> com.sigpher.nopdf.main.AbstractAdapter
+  com.sigpher.nopdf.main.CollectionAdapter o-- com.sigpher.nopdf.common.event.RecentPDFEvent : recentPDFEvent
+  com.sigpher.nopdf.main.CollectionFragment .up.|> com.sigpher.nopdf.main.AbstractAdapter.ICommInterface
+  com.sigpher.nopdf.main.CollectionFragment .up.|> com.sigpher.nopdf.main.IOperation
+  com.sigpher.nopdf.main.CollectionFragment -up-|> androidx.fragment.app.DialogFragment
+  com.sigpher.nopdf.main.CollectionFragment o-- com.sigpher.nopdf.main.AbstractAdapter : adapter
+  com.sigpher.nopdf.main.IMainContract +-down- com.sigpher.nopdf.main.IMainContract.P
+  com.sigpher.nopdf.main.IMainContract +-down- com.sigpher.nopdf.main.IMainContract.V
+  com.sigpher.nopdf.main.MainActivity .up.|> com.sigpher.nopdf.main.IMainContract.V
+  com.sigpher.nopdf.main.MainActivity -up-|> com.sigpher.nopdf.common.CommonActivity
+  com.sigpher.nopdf.main.MainActivity o-- com.sigpher.nopdf.common.widgets.NewViewPager : vp
+  com.sigpher.nopdf.main.MainActivity o-- com.sigpher.nopdf.main.IOperation : operation
+  com.sigpher.nopdf.main.MainActivity o-- com.sigpher.nopdf.main.IMainContract.P : presenter
+  com.sigpher.nopdf.main.MainFragmentAdapter -up-|> androidx.fragment.app.FragmentPagerAdapter
+  com.sigpher.nopdf.main.MainPresenter .up.|> com.sigpher.nopdf.main.IMainContract.P
+  com.sigpher.nopdf.main.MainPresenter o-- com.sigpher.nopdf.main.IMainContract.V : view
+  com.sigpher.nopdf.main.RecentAdapter -up-|> com.sigpher.nopdf.main.AbstractAdapter
+  com.sigpher.nopdf.main.RecentAdapter o-- com.sigpher.nopdf.common.event.RecentPDFEvent : recentPDFEvent
+  com.sigpher.nopdf.main.RecentFragment .up.|> com.sigpher.nopdf.main.AbstractAdapter.ICommInterface
+  com.sigpher.nopdf.main.RecentFragment .up.|> com.sigpher.nopdf.main.IOperation
+  com.sigpher.nopdf.main.RecentFragment -up-|> com.aaron.base.base.BaseFragment
+  com.sigpher.nopdf.main.XGridDecoration -up-|> androidx.recyclerview.widget.RecyclerView.ItemDecoration
+  com.sigpher.nopdf.main.YGridDecoration -up-|> androidx.recyclerview.widget.RecyclerView.ItemDecoration
+
+
+right footer
+
+
+PlantUML diagram generated by SketchIt! (https://bitbucket.org/pmesmeur/sketch.it)
+For more information about this tool, please contact philippe.mesmeur@gmail.com
+endfooter
+
+@enduml

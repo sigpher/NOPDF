@@ -1,0 +1,224 @@
+@startuml
+
+title __FILEPICKER's Class Diagram__\n
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      abstract class com.sigpher.nopdf.filepicker.AbstractAdapter {
+          {abstract} ~ reset()
+          {abstract} ~ selectAll()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.ByNameListable {
+          + listFile()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.FileFilterImpl {
+          + accept()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      interface com.sigpher.nopdf.filepicker.IListable {
+          {abstract} + listFile()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      interface com.sigpher.nopdf.filepicker.ISelectContract {
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      interface com.sigpher.nopdf.filepicker.ISelectContract.FileCallback {
+          {abstract} + onResult()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      interface com.sigpher.nopdf.filepicker.ISelectContract.M {
+          {abstract} + listFile()
+          {abstract} + listStorage()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      abstract class com.sigpher.nopdf.filepicker.ISelectContract.P {
+          # fileList : List<File>
+          {static} ~ ROOT_PATH : String
+          ~ P()
+          {abstract} ~ canFinish()
+          {abstract} ~ detachV()
+          {abstract} ~ goBack()
+          {abstract} ~ listFile()
+          {abstract} ~ listStorage()
+          {abstract} ~ model()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      interface com.sigpher.nopdf.filepicker.ISelectContract.V {
+          {abstract} + attachP()
+          {abstract} + onShowFileList()
+          {abstract} + onShowMessage()
+          {abstract} + onShowPath()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.SelectActivity {
+          {static} + EXTRA_SELECTED : String
+          ~ horizontalSv : HorizontalScrollView
+          ~ ibtnSelectAll : ImageButton
+          ~ rvSelect : RecyclerView
+          ~ tvImportCount : TextView
+          ~ tvPath : TextView
+          ~ vgPath : ViewGroup
+          {static} - EXTRA_IMPORTED : String
+          - dataObserver : AdapterDataObserver
+          - fileList : List<File>
+          - onClickListener : OnClickListener
+          - selectList : List<String>
+          - unbinder : Unbinder
+          + attachP()
+          + onBackPressed()
+          + onShowFileList()
+          + onShowMessage()
+          + onShowPath()
+          + onSupportNavigateUp()
+          {static} + start()
+          # createToolbar()
+          # layoutId()
+          # onCreate()
+          # onDestroy()
+          ~ onDirTap()
+          ~ onSelectResult()
+          - initToolbar()
+          - initView()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.SelectAdapter {
+          - checkArray : SparseBooleanArray
+          - context : Context
+          - fileList : List<File>
+          - importedList : List<String>
+          - selectList : List<String>
+          + getItemCount()
+          + onBindViewHolder()
+          + onBindViewHolder()
+          + onCreateViewHolder()
+          + selectAll()
+          ~ SelectAdapter()
+          ~ reset()
+          - fileCount()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.SelectAdapter.ViewHolder {
+          - cb : CheckBox
+          - ivIcon : ImageView
+          - ivNext : ImageView
+          - tvDescription : TextView
+          - tvTitle : TextView
+          ~ ViewHolder()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.SelectM {
+          + listFile()
+          + listStorage()
+          ~ SelectM()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace filepicker {
+      class com.sigpher.nopdf.filepicker.SelectP {
+          - curPath : String
+          ~ SelectP()
+          ~ canFinish()
+          ~ detachV()
+          ~ goBack()
+          ~ listFile()
+          ~ listStorage()
+          ~ model()
+      }
+    }
+  }
+  
+
+  com.sigpher.nopdf.filepicker.AbstractAdapter -up-|> androidx.recyclerview.widget.RecyclerView.Adapter
+  com.sigpher.nopdf.filepicker.ByNameListable .up.|> com.sigpher.nopdf.filepicker.IListable
+  com.sigpher.nopdf.filepicker.FileFilterImpl .up.|> java.io.FileFilter
+  com.sigpher.nopdf.filepicker.ISelectContract +-down- com.sigpher.nopdf.filepicker.ISelectContract.FileCallback
+  com.sigpher.nopdf.filepicker.ISelectContract +-down- com.sigpher.nopdf.filepicker.ISelectContract.M
+  com.sigpher.nopdf.filepicker.ISelectContract +-down- com.sigpher.nopdf.filepicker.ISelectContract.P
+  com.sigpher.nopdf.filepicker.ISelectContract +-down- com.sigpher.nopdf.filepicker.ISelectContract.V
+  com.sigpher.nopdf.filepicker.ISelectContract.P o-- com.sigpher.nopdf.filepicker.ISelectContract.M : model
+  com.sigpher.nopdf.filepicker.ISelectContract.P o-- com.sigpher.nopdf.filepicker.ISelectContract.V : view
+  com.sigpher.nopdf.filepicker.SelectActivity .up.|> com.sigpher.nopdf.filepicker.ISelectContract.V
+  com.sigpher.nopdf.filepicker.SelectActivity -up-|> com.sigpher.nopdf.common.CommonActivity
+  com.sigpher.nopdf.filepicker.SelectActivity o-- com.sigpher.nopdf.filepicker.AbstractAdapter : adapter
+  com.sigpher.nopdf.filepicker.SelectActivity o-- com.sigpher.nopdf.filepicker.ISelectContract.P : presenter
+  com.sigpher.nopdf.filepicker.SelectAdapter -up-|> com.sigpher.nopdf.filepicker.AbstractAdapter
+  com.sigpher.nopdf.filepicker.SelectAdapter +-down- com.sigpher.nopdf.filepicker.SelectAdapter.ViewHolder
+  com.sigpher.nopdf.filepicker.SelectAdapter.ViewHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+  com.sigpher.nopdf.filepicker.SelectM .up.|> com.sigpher.nopdf.filepicker.ISelectContract.M
+  com.sigpher.nopdf.filepicker.SelectM o-- com.sigpher.nopdf.filepicker.IListable : mListable
+  com.sigpher.nopdf.filepicker.SelectP -up-|> com.sigpher.nopdf.filepicker.ISelectContract.P
+
+
+right footer
+
+
+PlantUML diagram generated by SketchIt! (https://bitbucket.org/pmesmeur/sketch.it)
+For more information about this tool, please contact philippe.mesmeur@gmail.com
+endfooter
+
+@enduml

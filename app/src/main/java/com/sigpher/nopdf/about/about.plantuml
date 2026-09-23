@@ -1,0 +1,230 @@
+@startuml
+
+title __ABOUT's Class Diagram__\n
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.AboutActivity {
+          ~ mRvLibrary : RecyclerView
+          ~ mRvMessage : RecyclerView
+          - mUnbinder : Unbinder
+          + attachPresenter()
+          + onShowLibrary()
+          + onShowMessage()
+          + onSupportNavigateUp()
+          {static} + start()
+          # createToolbar()
+          # layoutId()
+          # onCreate()
+          # onDestroy()
+          - initLibrary()
+          - initMessage()
+          - initToolbar()
+          - initVersionStatus()
+          - initView()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.AboutPresenter {
+          - mLibraryList : List<Library>
+          - mMessageList : List<Message>
+          - mView : V<Message, Library>
+          + detachView()
+          + requestLibrary()
+          + requestMessage()
+          ~ AboutPresenter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.AboutPresenter.Element {
+          {static} ~ ICON_ID : int[]
+          {static} ~ LIBRARY_AUTHOR : String[]
+          {static} ~ LIBRARY_INTRODUCE : String[]
+          {static} ~ LIBRARY_NAME : String[]
+          {static} ~ TITLE : String[]
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.AboutUtils {
+          {static} ~ copyImageToDevice()
+          {static} ~ goWeChatScan()
+          {static} ~ openCoolApk()
+          - AboutUtils()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      interface com.sigpher.nopdf.about.IAboutContract {
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      interface com.sigpher.nopdf.about.IAboutContract.P {
+          {abstract} + detachView()
+          {abstract} + requestLibrary()
+          {abstract} + requestMessage()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      interface com.sigpher.nopdf.about.IAboutContract.V {
+          {abstract} + attachPresenter()
+          {abstract} + onShowLibrary()
+          {abstract} + onShowMessage()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      interface com.sigpher.nopdf.about.Info {
+          {static} + FEEDBACK_SUBJECT : String
+          {static} + FEEDBACK_TEXT : String
+          {static} + MY_BLOG : String
+          {static} + MY_EMAIL : String
+          {static} + MY_GITHUB : String
+          {static} + SOURCE_CODE : String
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.Library {
+          - author : String
+          - introduce : String
+          - name : String
+          + getAuthor()
+          + getIntroduce()
+          + getName()
+          + setAuthor()
+          + setIntroduce()
+          + setName()
+          ~ Library()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.LibraryAdapter {
+          - mContext : Context
+          - mList : List<T>
+          + getItemCount()
+          + onBindViewHolder()
+          + onCreateViewHolder()
+          ~ LibraryAdapter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.LibraryAdapter.ViewHolder {
+          ~ author : TextView
+          ~ introduce : TextView
+          ~ itemView : View
+          ~ name : TextView
+          ~ ViewHolder()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.Message {
+          - iconId : int
+          - title : String
+          + getIconId()
+          + getTitle()
+          + setIconId()
+          + setTitle()
+          ~ Message()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.MessageAdapter {
+          {static} - FEEDBACK : int
+          {static} - GIFT : int
+          {static} - GITHUB : int
+          {static} - INTRODUCE : int
+          {static} - RATE_APP : int
+          {static} - SOURCE_CODE : int
+          - activity : Activity
+          - giftDialog : Dialog
+          - list : List<T>
+          - qrcodeDialog : Dialog
+          + getItemCount()
+          + onBindViewHolder()
+          + onCreateViewHolder()
+          ~ MessageAdapter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace about {
+      class com.sigpher.nopdf.about.MessageAdapter.ViewHolder {
+          ~ icon : ImageView
+          ~ itemView : View
+          ~ title : TextView
+          ~ ViewHolder()
+      }
+    }
+  }
+  
+
+  com.sigpher.nopdf.about.AboutActivity .up.|> com.sigpher.nopdf.about.IAboutContract.V
+  com.sigpher.nopdf.about.AboutActivity -up-|> com.sigpher.nopdf.common.CommonActivity
+  com.sigpher.nopdf.about.AboutActivity o-- com.sigpher.nopdf.about.IAboutContract.P : mPresenter
+  com.sigpher.nopdf.about.AboutPresenter .up.|> com.sigpher.nopdf.about.IAboutContract.P
+  com.sigpher.nopdf.about.AboutPresenter +-down- com.sigpher.nopdf.about.AboutPresenter.Element
+  com.sigpher.nopdf.about.IAboutContract +-down- com.sigpher.nopdf.about.IAboutContract.P
+  com.sigpher.nopdf.about.IAboutContract +-down- com.sigpher.nopdf.about.IAboutContract.V
+  com.sigpher.nopdf.about.LibraryAdapter -up-|> androidx.recyclerview.widget.RecyclerView.Adapter
+  com.sigpher.nopdf.about.LibraryAdapter +-down- com.sigpher.nopdf.about.LibraryAdapter.ViewHolder
+  com.sigpher.nopdf.about.LibraryAdapter.ViewHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+  com.sigpher.nopdf.about.MessageAdapter -up-|> androidx.recyclerview.widget.RecyclerView.Adapter
+  com.sigpher.nopdf.about.MessageAdapter +-down- com.sigpher.nopdf.about.MessageAdapter.ViewHolder
+  com.sigpher.nopdf.about.MessageAdapter.ViewHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+
+
+right footer
+
+
+PlantUML diagram generated by SketchIt! (https://bitbucket.org/pmesmeur/sketch.it)
+For more information about this tool, please contact philippe.mesmeur@gmail.com
+endfooter
+
+@enduml

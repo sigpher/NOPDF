@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.aaron.yespdf.common.widgets.ImageTextView
+    <com.sigpher.nopdf.common.widgets.ImageTextView
         android:id="@+id/app_itv_placeholder"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

@@ -1,2 +1,2 @@
 include ':app', ':android-pdf-viewer'
-rootProject.name='YES PDF!'
+rootProject.name='NO PDF!'

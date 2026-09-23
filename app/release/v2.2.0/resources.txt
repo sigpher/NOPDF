@@ -114,7 +114,7 @@ Referenced Strings:
   /Android/data/
   /Sonic/
   /SonicResource/
-  /YESPDF/
+  /NOPDF/
   /api/crashsdk/validate
   /background
   /bg_non_interactive
@@ -1686,19 +1686,19 @@ Referenced Strings:
   codex:
   collection
   color
-  com.aaron.yespdf.about.MessageAdapter...
-  com.aaron.yespdf.about.MessageAdapter...
-  com.aaron.yespdf.fileprovider
-  com.aaron.yespdf.main.AllFragment2$de...
-  com.aaron.yespdf.main.AllFragment2$de...
-  com.aaron.yespdf.main.MainActivity$cr...
-  com.aaron.yespdf.main.MainActivity$cr...
-  com.aaron.yespdf.main.MainActivity$cr...
-  com.aaron.yespdf.main.MainActivity$cr...
-  com.aaron.yespdf.main.MainPresenter$i...
-  com.aaron.yespdf.main.MainPresenter$i...
-  com.aaron.yespdf.preview.PreviewActiv...
-  com.aaron.yespdf.preview.PreviewActiv...
+  com.sigpher.nopdf.about.MessageAdapter...
+  com.sigpher.nopdf.about.MessageAdapter...
+  com.sigpher.nopdf.fileprovider
+  com.sigpher.nopdf.main.AllFragment2$de...
+  com.sigpher.nopdf.main.AllFragment2$de...
+  com.sigpher.nopdf.main.MainActivity$cr...
+  com.sigpher.nopdf.main.MainActivity$cr...
+  com.sigpher.nopdf.main.MainActivity$cr...
+  com.sigpher.nopdf.main.MainActivity$cr...
+  com.sigpher.nopdf.main.MainPresenter$i...
+  com.sigpher.nopdf.main.MainPresenter$i...
+  com.sigpher.nopdf.preview.PreviewActiv...
+  com.sigpher.nopdf.preview.PreviewActiv...
   com.android.contacts
   com.android.externalstorage.documents
   com.android.id.impl.IdProviderImpl
@@ -2672,8 +2672,8 @@ Referenced Strings:
   https://developer.umeng.com/docs/6663...
   https://errlog.umeng.com
   https://errlog.umeng.com/upload
-  https://github.com/Aaronzzx
-  https://github.com/Aaronzzx/YESPDF
+  https://github.com/sigpher
+  https://github.com/sigpher/NOPDF
   https://github.com/JakeWharton/butter...
   https://github.com/ReactiveX/RxAndroid
   https://github.com/ReactiveX/RxJava
@@ -3827,8 +3827,8 @@ Referenced Strings:
   yMMMEd
   year
   yes
-  yespdf.db
-  yespdf_shortcut_search
+  nopdf.db
+  nopdf_shortcut_search
   yosuid
   yyyyMMddHHmmss
   z
@@ -5358,7 +5358,7 @@ layout:abc_search_dropdown_item_icons_2line:2131492888 => [style:RtlOverlay_Widg
 layout:abc_search_view:2131492889 => [string:abc_searchview_description_search:2131755029, attr:actionButtonStyle:2130968587, dimen:abc_dropdownitem_icon_width:2131165225, style:RtlOverlay_Widget_AppCompat_SearchView_MagIcon:2131820834, id:search_edit_frame:2131296636, dimen:abc_dropdownitem_text_padding_left:2131165226, dimen:abc_dropdownitem_text_padding_right:2131165227, attr:selectableItemBackgroundBorderless:2130969146, string:abc_searchview_description_clear:2131755027, string:abc_searchview_description_submit:2131755030, string:abc_searchview_description_voice:2131755031]
 layout:abc_select_dialog_material:2131492890 => [attr:listDividerAlertDialog:2130969041, dimen:abc_dialog_list_padding_bottom_no_buttons:2131165216, dimen:abc_dialog_list_padding_top_no_title:2131165217, style:Widget_AppCompat_ListView:2131821132]
 layout:abc_tooltip:2131492891 => [attr:tooltipFrameBackground:2130969291, dimen:tooltip_margin:2131165542, dimen:tooltip_vertical_padding:2131165545, dimen:tooltip_horizontal_padding:2131165541, style:TextAppearance_AppCompat_Tooltip:2131820897, attr:tooltipForegroundColor:2130969290]
-layout:app_activity_about:2131492892 => [color:base_white:2131099707, style:AppToolbarStyle:2131820569, drawable:app_ic_yespdf:2131230911, string:app_name_en:2131755111, color:app_color_accent:2131099683, dimen:base_text_xxxxhlarge:2131165271, color:base_black_hint:2131099704, dimen:base_text_small:2131165267, string:app_overview:2131755124, color:base_black:2131099700, dimen:base_text_large:2131165265, string:app_open_source:2131755122]
+layout:app_activity_about:2131492892 => [color:base_white:2131099707, style:AppToolbarStyle:2131820569, drawable:app_ic_nopdf:2131230911, string:app_name_en:2131755111, color:app_color_accent:2131099683, dimen:base_text_xxxxhlarge:2131165271, color:base_black_hint:2131099704, dimen:base_text_small:2131165267, string:app_overview:2131755124, color:base_black:2131099700, dimen:base_text_large:2131165265, string:app_open_source:2131755122]
 layout:app_activity_main:2131492893 => [style:AppToolbarStyle:2131820569, style:AppTabStyle:2131820565, string:app_recent:2131755131, string:app_all:2131755037, id:app_toolbar:2131296422, layout:app_include_operation_bar:2131492920]
 layout:app_activity_preview:2131492894 => [color:base_white:2131099707, drawable:app_ic_placeholder_black:2131230890, color:base_transparent:2131099706, style:AppScaleView:2131820561, drawable:app_seekbar_bg:2131230935, drawable:app_sel_seekbar:2131230948, drawable:app_bg_scale_bar:2131230827, color:app_preview_bar_bg:2131099693, string:app_previous_chapter:2131755126, color:base_white_hint:2131099709, dimen:base_text_large:2131165265, string:app_next_chapter:2131755113, drawable:app_ic_action_content_white:2131230832, string:app_content:2131755057, dimen:base_text_small:2131165267, drawable:app_ic_action_read_method_white:2131230839, string:app_read_method:2131755128, drawable:app_sel_autoscroll:2131230936, string:app_auto_scroll:2131755041, drawable:app_sel_bookmark:2131230938, string:app_bookmark:2131755050, drawable:app_ic_more_horiz_black_24dp:2131230883, string:app_more:2131755108, drawable:app_shape_circle_black_alpha:2131230955, id:app_ll_bottombar:2131296373, drawable:app_sel_night_mode:2131230945, style:AppToolbarStyle:2131820569, drawable:app_shape_pageinfo_bg:2131230958, id:app_toolbar:2131296422, color:base_white_shallow:2131099710, drawable:app_shape_round_rect:2131230959, drawable:app_sel_undo_redo:2131230951, color:base_black_shallow:2131099705, color:base_black:2131099700, style:AppTabStyle:2131820565, drawable:app_ic_bookmark_border_white_24dp:2131230854, drawable:app_ic_horizontal_white_24dp:2131230875, string:app_read_method_horizontal:2131755129, drawable:app_ic_vertical_white_24dp:2131230910, string:app_read_method_vertical:2131755130, drawable:app_ic_screen_lock_landscape_white_24dp:2131230895, string:app_lock_landscape:2131755106, drawable:app_ic_image_white_24dp:2131230876, string:app_export_image:2131755068, drawable:app_ic_crop_white_24dp:2131230868, string:app_clip:2131755053, drawable:app_ic_action_settings_white:2131230845, string:app_settings:2131755144]
 layout:app_activity_scan:2131492895 => [color:base_white:2131099707, style:AppToolbarStyle:2131820569, drawable:app_sel_select_all:2131230949, drawable:app_ic_search_black_24dp:2131230898, layout:app_include_searchview:2131492922, drawable:app_bg_rect_red_ripple:2131230820, string:app_import_count:2131755094, dimen:base_text_large:2131165265]
@@ -6765,7 +6765,7 @@ anim:app_layout_fall_down:2130771981,
    drawable:app_ic_source_code:2131230902,
    drawable:app_ic_star_black_24dp:2131230903,
    drawable:app_ic_unchecked_grey_24dp:2131230907,
-   drawable:app_ic_yespdf:2131230911,
+   drawable:app_ic_nopdf:2131230911,
    drawable:app_img_add_group:2131230913,
    drawable:app_img_all:2131230914,
    drawable:app_img_bookmark:2131230916,
@@ -7853,7 +7853,7 @@ Skipped unused resource res/drawable-v23/mtrl_popupmenu_background_dark.xml: -1 
 Skipped unused resource res/drawable-xxhdpi-v4/app_ic_all.png: 698 bytes (replaced with small dummy file of size 67 bytes)
 Skipped unused resource res/drawable-xxhdpi-v4/app_ic_can_up_grey.png: 275 bytes (replaced with small dummy file of size 67 bytes)
 Skipped unused resource res/drawable-xxhdpi-v4/app_ic_recent.png: 3066 bytes (replaced with small dummy file of size 67 bytes)
-Skipped unused resource res/drawable-xxhdpi-v4/app_ic_yespdf_dev.png: 16588 bytes (replaced with small dummy file of size 67 bytes)
+Skipped unused resource res/drawable-xxhdpi-v4/app_ic_nopdf_dev.png: 16588 bytes (replaced with small dummy file of size 67 bytes)
 Skipped unused resource res/drawable-xxhdpi-v4/app_img_auto_scan.png: 1599 bytes (replaced with small dummy file of size 67 bytes)
 Skipped unused resource res/drawable-xxhdpi-v4/app_img_loading_list_1.png: 594 bytes (replaced with small dummy file of size 67 bytes)
 Skipped unused resource res/drawable-xxhdpi-v4/app_img_loading_list_10.png: 5965 bytes (replaced with small dummy file of size 67 bytes)

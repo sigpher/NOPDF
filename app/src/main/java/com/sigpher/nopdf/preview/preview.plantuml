@@ -1,0 +1,297 @@
+@startuml
+
+title __PREVIEW's Class Diagram__\n
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.Bookmark {
+          {static} + CREATOR : Creator<Bookmark>
+          - pageId : Integer
+          - time : long
+          - title : String
+          + Bookmark()
+          + Bookmark()
+          + describeContents()
+          + getPageId()
+          + getTime()
+          + getTitle()
+          + setPageId()
+          + setTime()
+          + setTitle()
+          + toString()
+          + writeToParcel()
+          # Bookmark()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.BookmarkAdapter {
+          {static} - TYPE_EMPTY : int
+          - mBookmarks : List<Bookmark>
+          - mDateFormat : DateFormat
+          + getItemCount()
+          + getItemViewType()
+          + onBindViewHolder()
+          + onCreateViewHolder()
+          ~ BookmarkAdapter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.BookmarkAdapter.ViewHolder {
+          ~ tvPageId : TextView
+          ~ tvTime : TextView
+          ~ tvTitle : TextView
+          ~ ViewHolder()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.BookmarkFragment {
+          ~ mRvBookmark : RecyclerView
+          - mAdapter : Adapter
+          - mBookmarks : List<Bookmark>
+          - mUnbinder : Unbinder
+          + onCreateView()
+          + onDestroyView()
+          + update()
+          {static} ~ newInstance()
+          - initView()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.ContentFragment {
+          ~ mLl : LinearLayout
+          - mContentList : List<Bookmark>
+          - mUnbinder : Unbinder
+          + onCreateView()
+          + onDestroyView()
+          + update()
+          {static} ~ newInstance()
+          - addChild()
+          - initContent()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.ContentHolder {
+          - ivIcon : ImageView
+          - treeNode : TreeNode
+          - tvTitle : TextView
+          + createNodeView()
+          + toggle()
+          ~ ContentHolder()
+          ~ setOnIconTapListener()
+          ~ setOnNodeTapListener()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.ContentHolder.IconTreeItem {
+          ~ icon : int
+          ~ pageId : String
+          ~ title : String
+          + IconTreeItem()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      interface com.sigpher.nopdf.preview.ContentHolder.OnIconTapListener {
+          {abstract} + onIconTap()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      interface com.sigpher.nopdf.preview.ContentHolder.OnNodeTapListener {
+          {abstract} + onNodeTap()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      interface com.sigpher.nopdf.preview.IActivityInterface {
+          {abstract} + onJumpTo()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      interface com.sigpher.nopdf.preview.IBkFragInterface {
+          {abstract} + update()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      interface com.sigpher.nopdf.preview.IContentFragInterface {
+          {abstract} + update()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.PagerAdapter {
+          + getCount()
+          + getItem()
+          ~ PagerAdapter()
+      }
+    }
+  }
+  
+
+  namespace com.sigpher.nopdf {
+    namespace preview {
+      class com.sigpher.nopdf.preview.PreviewActivity {
+          ~ ibtnQuickbarAction : ImageButton
+          ~ llBottomBar : LinearLayout
+          ~ llQuickBar : LinearLayout
+          ~ llReadMethod : LinearLayout
+          ~ pdfViewBg : View
+          ~ sbProgress : SeekBar
+          ~ screenCover : View
+          ~ tabLayout : TabLayout
+          ~ tvAutoScroll : TextView
+          ~ tvBookmark : TextView
+          ~ tvContent : TextView
+          ~ tvHorizontal : TextView
+          ~ tvLockLandscape : TextView
+          ~ tvMore : TextView
+          ~ tvNextChapter : TextView
+          ~ tvPageinfo : TextView
+          ~ tvPreviousChapter : TextView
+          ~ tvQuickbarPageinfo : TextView
+          ~ tvQuickbarTitle : TextView
+          ~ tvReadMethod : TextView
+          ~ tvSettings : TextView
+          ~ tvVertical : TextView
+          ~ vgContent : ViewGroup
+          ~ vgMore : ViewGroup
+          ~ vp : ViewPager
+          {static} - BUNDLE_CUR_PAGE : String
+          {static} - EXTRA_PDF : String
+          {static} - OFFSET_Y : float
+          {static} - REQUEST_CODE_SETTINGS : int
+          - autoDisp : Disposable
+          - bookmarkMap : Map<Long, Bookmark>
+          - canvas : Canvas
+          - contentMap : Map<Long, Bookmark>
+          - curPage : int
+          - isNightMode : boolean
+          - isPause : boolean
+          - isVolumeControl : boolean
+          - nextPage : int
+          - pageCount : int
+          - pageList : List<Long>
+          - pageWidth : float
+          - paint : Paint
+          - password : String
+          - previousPage : int
+          - unbinder : Unbinder
+          - uri : Uri
+          + onBackPressed()
+          + onConfigurationChanged()
+          + onJumpTo()
+          + onKeyDown()
+          + onSupportNavigateUp()
+          + onWindowFocusChanged()
+          {static} + start()
+          # createToolbar()
+          # layoutId()
+          # onActivityResult()
+          # onCreate()
+          # onDestroy()
+          # onPause()
+          # onRestart()
+          # onSaveInstanceState()
+          # onStop()
+          - closeContent()
+          - closeMore()
+          - closeReadMethod()
+          - drawBookmark()
+          - enterFullScreen()
+          - exitFullScreen()
+          - findContent()
+          - getData()
+          - getPercent()
+          - getTitle()
+          - hideBar()
+          - initPdf()
+          - initView()
+          - openContent()
+          - openMore()
+          - openReadMethod()
+          - setListener()
+          - showAlertDialog()
+          - showBar()
+          - showInputDialog()
+          - showQuickbar()
+      }
+    }
+  }
+  
+
+  com.sigpher.nopdf.preview.Bookmark .up.|> android.os.Parcelable
+  com.sigpher.nopdf.preview.BookmarkAdapter -up-|> androidx.recyclerview.widget.RecyclerView.Adapter
+  com.sigpher.nopdf.preview.BookmarkAdapter +-down- com.sigpher.nopdf.preview.BookmarkAdapter.ViewHolder
+  com.sigpher.nopdf.preview.BookmarkAdapter.ViewHolder -up-|> androidx.recyclerview.widget.RecyclerView.ViewHolder
+  com.sigpher.nopdf.preview.BookmarkFragment .up.|> com.sigpher.nopdf.preview.IBkFragInterface
+  com.sigpher.nopdf.preview.BookmarkFragment -up-|> com.aaron.base.base.BaseFragment
+  com.sigpher.nopdf.preview.ContentFragment .up.|> com.sigpher.nopdf.preview.IContentFragInterface
+  com.sigpher.nopdf.preview.ContentFragment -up-|> com.aaron.base.base.BaseFragment
+  com.sigpher.nopdf.preview.ContentFragment o-- com.sigpher.nopdf.common.widgets.ImageTextView : mItvEmpty
+  com.sigpher.nopdf.preview.ContentHolder -up-|> com.unnamed.b.atv.model.TreeNode.BaseNodeViewHolder
+  com.sigpher.nopdf.preview.ContentHolder o-- com.sigpher.nopdf.preview.ContentHolder.OnIconTapListener : mOnIconTapListener
+  com.sigpher.nopdf.preview.ContentHolder o-- com.sigpher.nopdf.preview.ContentHolder.OnNodeTapListener : mOnNodeTapListener
+  com.sigpher.nopdf.preview.ContentHolder +-down- com.sigpher.nopdf.preview.ContentHolder.IconTreeItem
+  com.sigpher.nopdf.preview.ContentHolder +-down- com.sigpher.nopdf.preview.ContentHolder.OnIconTapListener
+  com.sigpher.nopdf.preview.ContentHolder +-down- com.sigpher.nopdf.preview.ContentHolder.OnNodeTapListener
+  com.sigpher.nopdf.preview.PagerAdapter -up-|> androidx.fragment.app.FragmentPagerAdapter
+  com.sigpher.nopdf.preview.PreviewActivity .up.|> com.sigpher.nopdf.preview.IActivityInterface
+  com.sigpher.nopdf.preview.PreviewActivity -up-|> com.sigpher.nopdf.common.CommonActivity
+  com.sigpher.nopdf.preview.PreviewActivity o-- com.github.barteksc.pdfviewer.PDFView : pdfView
+  com.sigpher.nopdf.preview.PreviewActivity o-- com.sigpher.nopdf.preview.IBkFragInterface : bkFragInterface
+  com.sigpher.nopdf.preview.PreviewActivity o-- com.sigpher.nopdf.preview.IContentFragInterface : contentFragInterface
+  com.sigpher.nopdf.preview.PreviewActivity o-- com.sigpher.nopdf.common.bean.PDF : pdf
+
+
+right footer
+
+
+PlantUML diagram generated by SketchIt! (https://bitbucket.org/pmesmeur/sketch.it)
+For more information about this tool, please contact philippe.mesmeur@gmail.com
+endfooter
+
+@enduml

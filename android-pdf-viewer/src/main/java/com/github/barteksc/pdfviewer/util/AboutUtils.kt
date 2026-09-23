@@ -52,7 +52,7 @@ internal object AboutUtils {
     fun copyImageToDevice(
             context: Context,
             bitmap: Bitmap,
-            savePath: String = "${PathUtils.getExternalAppCachePath()}/yespdf-gift.jpg"
+            savePath: String = "${PathUtils.getExternalAppCachePath()}/nopdf-gift.jpg"
     ) {
         val file = File(savePath)
         file.mkdirs()
@@ -71,7 +71,7 @@ internal object AboutUtils {
                 e.printStackTrace()
             }
         }
-        notifyMedia(context, file.absolutePath, "com.aaron.yespdf.fileprovider")
+        notifyMedia(context, file.absolutePath, "com.sigpher.nopdf.fileprovider")
     }
 
     private fun notifyMedia(context: Context, path: String, authority: String) {

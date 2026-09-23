@@ -24,14 +24,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
 
-            <com.aaron.yespdf.common.widgets.BorderImageView
+            <com.sigpher.nopdf.common.widgets.BorderImageView
                 android:id="@+id/app_iv_1"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 tools:background="@color/app_color_accent" />
 
-            <com.aaron.yespdf.common.widgets.BorderImageView
+            <com.sigpher.nopdf.common.widgets.BorderImageView
                 android:id="@+id/app_iv_2"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -46,14 +46,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp">
 
-            <com.aaron.yespdf.common.widgets.BorderImageView
+            <com.sigpher.nopdf.common.widgets.BorderImageView
                 android:id="@+id/app_iv_3"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 tools:background="@color/app_color_accent" />
 
-            <com.aaron.yespdf.common.widgets.BorderImageView
+            <com.sigpher.nopdf.common.widgets.BorderImageView
                 android:id="@+id/app_iv_4"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
