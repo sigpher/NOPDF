@@ -7,7 +7,7 @@
 NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并导入手机上的 PDF 文件，按文件夹或自定义方式分组管理书架，支持竖屏/横屏、"点击翻页、音量键翻页、自动滚动"等多种阅读方式，并内置书签、目录、进度记忆、全文搜索、备份恢复等实用功能。
 
 - 包名：`com.sigpher.nopdf`
-- 当前版本：0.2.1（versionCode 13）
+- 当前版本：0.2.2（versionCode 14）
 - 支持系统：Android 5.0（API 21）及以上（targetSdk 28）
 - 支持语言：英文、简体中文、繁体中文
 
@@ -29,6 +29,7 @@ NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并�
 - 目录/大纲：可展开的树形列表（RecyclerView 实现），点击行首图标展开/折叠、点击整行跳转到对应页
 - 进度记忆：自动记录阅读进度与阅读时间，并排序最近阅读
 - 缩放与布局：随意缩放、快速缩放、线性布局切换
+- 页面间隔：纵向阅读时相邻两页可留 0 / 4 / 8 / 12 / 16 / 24 dp 间距（横向整页翻页不生效）
 - 显示效果：全局灰度（实验性）、颜色反转、状态栏显示/隐藏、保持屏幕常亮
 - 导出图片：将当前页导出为高清图片（保存至 `/Pictures/NOPDF/<书名>/第N页.png`）
 - 桌面快捷方式：为指定 PDF 创建桌面快捷方式（Android 7.1+）
@@ -104,7 +105,7 @@ KEY_PASSWORD=<密钥密码>
 # Debug 构建（applicationId 追加 .dev 后缀，使用开发图标与 App 名）
 ./gradlew :app:assembleDebug
 
-# Release 构建（开启 minify + shrinkResources）
+# Release 构建（开启 minify + shrinkResources，按 ABI 拆分出两个 APK）
 ./gradlew :app:assembleRelease
 
 # 单元测试（目录树展开/折叠逻辑等）
@@ -114,11 +115,24 @@ KEY_PASSWORD=<密钥密码>
 ./gradlew clean
 ```
 
+### 发布产物（按 ABI 拆分）
+
+Release 使用 `splits.abi` 按 ABI 拆分，`assembleRelease` 会输出两个各自只带一份 native 库的 APK：
+
+| APK | ABI | 体积 | 适用设备 |
+| --- | --- | --- | --- |
+| `app/build/outputs/apk/release/app-arm64-v8a-release.apk` | `arm64-v8a` | 约 5.9 MB | 绝大多数现代 64 位机型 |
+| `app/build/outputs/apk/release/app-armeabi-v7a-release.apk` | `armeabi-v7a` | 约 5.7 MB | 老旧的 32 位机型 |
+
+- 不再产出同时含两个 ABI 的通用包（`universalApk false`），`armeabi`(ARMv5)、`x86`、`x86_64` 均不产出。
+- 两个 APK 使用**同一签名与同一 versionCode**，安装时按设备 ABI 选择对应包即可；换装另一个 ABI 的包不影响数据（签名一致）。
+- 拆包前后对比：原来的通用包 9,116,313 B，拆分后每包约少 3 MB，主要省下的是 pdfium 的另一份 native 库。
+
 ### 其他构建要点
 
 - Debug 变体通过 manifest 占位符切换图标/名称；两个变体都使用 release 签名配置
 - 桌面图标为自适应图标（`mipmap-anydpi-v26/*.xml` + 各密度前景与 legacy 位图）；更换图标只需替换根目录 `NoPDF.png`，再执行 `python tools/gen_icons.py` 重新生成（Dev 角标素材见 `tools/dev_badge.png`）
-- 打包 APK 仅包含 ARM ABI 的 Native 库（`armeabi-v7a` / `arm64-v8a`；`armeabi` 已移除）
+- Native 库只包含 ARM ABI（`armeabi-v7a` / `arm64-v8a`；`armeabi` 已移除），且 release 按 ABI 拆分为两个 APK（见「发布产物」）
 - App 内所有资源必须使用 `app_` 前缀（`resourcePrefix 'app'`）
 - 数据库升级为非破坏式迁移（`UpdateOpenHelper` + `MigrationHelper`），修改数据库结构需同时更新 `greendao { schemaVersion }` 与迁移监听列表
 
@@ -145,7 +159,7 @@ KEY_PASSWORD=<密钥密码>
 - 视图绑定仍使用已废弃的 `kotlinx.android.synthetic`（20 个文件）
 - `preview/PreviewActivity.kt` 体量较大（约 1447 行），混合了渲染、手势、书签、目录与导出等职责
 - 无深色模式（固定使用 `Theme.AppCompat.Light`）
-- 单元测试覆盖有限：仅目录树展开/折叠有回归测试；数据库迁移、备份/还原等高风险逻辑尚无自动化回归
+- 单元测试覆盖有限：目前仅目录树展开/折叠（`ContentTreeTest`）与分组封面构建（`CoverBuilderTest`）有纯 JVM 回归测试；数据库迁移、备份/还原等高风险逻辑尚无自动化回归
 - **0.2.0 起移除了「选词查词」（长按英文单词查词典）功能**，同时移除了 PDFBox 及其传递依赖 BouncyCastle 以缩减包体。若需要该功能，请在 issue 中反馈
 - 受 pdfium 1.9.0 的 Java 层没有文本 API 所限，本应用不提供取字类能力（选词、复制、全文搜索）
 

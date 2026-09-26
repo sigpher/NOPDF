@@ -20,8 +20,8 @@ android {
         applicationId "com.sigpher.nopdf"
         minSdkVersion 21
         targetSdkVersion 28
-        versionCode 13
-        versionName "0.2.1"
+        versionCode 14
+        versionName "0.2.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled true
 
@@ -29,11 +29,21 @@ android {
         // 语言的字符串，全部打进 resources.arsc 会白白多占几百 KB。这里按实际支持的语言白名单
         // 过滤；只列语言不列密度，因此各密度图片不受影响。
         resConfigs 'en', 'zh-rCN', 'zh-rHK', 'zh-rMO', 'zh-rSG', 'zh-rTW'
+    }
 
-        ndk {
-            // 只保留 64 位与 32 位 v7a。'armeabi'(ARMv5) 早已废弃，minSdk 21 的设备
-            // 不再搭载，能省下约 0.67MB 安装包。
-            abiFilters 'armeabi-v7a', 'arm64-v8a' //, 'x86', 'x86_64'
+    // 按 ABI 拆包：每个 APK 只带一个 ABI 的 native 库。native 库（主要是 pdfium 的
+    // libmodpdfium.so / libjniPdfium.so）两份加起来约占包体 67%，是最大的单项；拆开后每个包
+    // 只保留自己那一份，单包可再省下约 2.9MB。
+    //
+    // 原先是用 defaultConfig.ndk.abiFilters 做过滤——那只决定"哪些 ABI 进包"，两个 ABI 仍然
+    // 打进同一个 APK。这里改用 splits.abi 真正按 ABI 输出多个 APK，并把 universalApk 关掉
+    // （不再产出同时含两个 ABI 的通用包）。'armeabi'(ARMv5) 与 x86/x86_64 均不产出。
+    splits {
+        abi {
+            enable true
+            reset() // 清掉 AGP 的默认 ABI 列表，只保留下面 include 的两个
+            include 'armeabi-v7a', 'arm64-v8a'
+            universalApk false
         }
     }
 

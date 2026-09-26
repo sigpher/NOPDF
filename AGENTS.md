@@ -5,10 +5,10 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 ## Build
 
 - Toolchain is frozen: Gradle 5.4.1 wrapper, AGP 3.4.1, Kotlin 1.3.61, `compileSdk 29`, `targetSdk 28`, Java 8 source/target. **Requires JDK 8.** Do not upgrade casually — the whole build depends on these.
-- **Top gotcha — `local.properties`.** `app/build.gradle:35-45` does an unguarded `file('local.properties').newDataInputStream()` at *configuration* time, so *every* Gradle invocation fails if the file is missing — even `./gradlew clean` or `:app:testDebugUnitTest`. It is gitignored and **absent from a fresh checkout** (it is also absent right now). It needs `sdk.dir` **plus** `STORE_FILE_NAME`, `KEYSTORE_PASSWORD`, `STORE_ALIAS`, `KEY_PASSWORD`; both variants sign with the release keystore, so debug builds fail too.
+- **Top gotcha — `local.properties`.** `app/build.gradle:52` does an unguarded `file('local.properties').newDataInputStream()` at *configuration* time, so *every* Gradle invocation fails if the file is missing — even `./gradlew clean` or `:app:testDebugUnitTest`. It is gitignored and **absent from a fresh checkout**. It needs `sdk.dir` **plus** `STORE_FILE_NAME`, `KEYSTORE_PASSWORD`, `STORE_ALIAS`, `KEY_PASSWORD`; both variants sign with the release keystore, so debug builds fail too.
 - Commands:
   - `./gradlew :app:assembleDebug` — primary build check
-  - `./gradlew :app:assembleRelease` — `minifyEnabled` + `shrinkResources`
+  - `./gradlew :app:assembleRelease` — `minifyEnabled` + `shrinkResources`, and since 0.2.2 **ABI-split** into two APKs (`splits.abi`, `universalApk false`): `app/build/outputs/apk/release/app-arm64-v8a-release.apk` + `app-armeabi-v7a-release.apk`. There is no longer an `app-release.apk`; a stale one left over from an older build will linger in that dir until cleaned.
   - `./gradlew :app:testDebugUnitTest` — JVM unit tests
   - one class: `./gradlew :app:testDebugUnitTest --tests "com.sigpher.nopdf.preview.ContentTreeTest"`
 - `jcenter()` / `dl.bintray.com` are still listed in the root `build.gradle` but are dead. `mavenCentral()` + `maven.aliyun.com/repository/public` mirrors are present in both `buildscript` and `allprojects`, so deps (incl. Umeng) do resolve. README also claims a `plugins.gradle.org/m2` mirror — it is **not** in any build file. Trust the build files over the README.
@@ -23,7 +23,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   及其传递依赖 BouncyCastle 也已一并删除**（同时省掉了 fontbox 的 cmap 资源与约 1MB dex）。
   若日后要做选词 / 全文搜索 / 复制，两条路：给 fork 的 `libjniPdfium.so` 补 `FPDFText_*` 绑定
   （最干净，且能复用 pdfium 已打开的句柄），或重新引入 PDFBox（代价是与 pdfium 重复解析同一份文件）。
-- `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:113-119`.
+- `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:121-128`.
 
 ## 性能与稳定性（已修 / 仍存在）
 
@@ -36,14 +36,18 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   `DBHelper.insert`，而入库要渲染封面。现改为记录 `pendingImportPath`，
   由 `importThenOpen()` 在 `Dispatchers.IO` 完成后再 `initPdf`；
   记账逻辑抽成 `onPdfLoaded()` 供两条路径共用，延后打开需重跑 `initScaleFactor()`。
-- **`armeabi`(ARMv5) 已从 `abiFilters` 移除**：该 ABI 早已废弃，minSdk 21 设备不再搭载，
-  约省 0.67MB。
-- **包体现状（0.2.1 release APK 9,116,313 B ≈ 8.7MB）**：native 库占 6,089,499 B（**67%**，
-  其中 pdfium 约 4.75MB、要同时带 `arm64-v8a` 与 `armeabi-v7a`），`classes.dex` 1,644,535 B，
-  `res/` 552,678 B，`resources.arsc` 394,260 B，`assets/` 已完全为空。
-  **进一步压缩的最大杠杆是按 ABI 分包**（每包可再省约 2.9MB），其次是 PNG 调色板化
-  （见 Icons 一节）与 R8 规则；`lib/` 已无冗余 ABI，`assets/` 已无内容，语言资源已用
-  `resConfigs` 白名单过滤过。改动构建配置后请重新量一次再下结论。
+- **Native 库已按 ABI 拆包（0.2.2 起）**：`defaultConfig.ndk.abiFilters` 已移除，改用
+  `android.splits.abi`（`enable true` + `reset()` + `include 'armeabi-v7a','arm64-v8a'`、
+  `universalApk false`）。此前 abiFilters 只决定"哪些 ABI 进包"，两个 ABI 仍塞在同一个 APK 里；
+  现在每个 APK 只带一份 native 库。`armeabi`(ARMv5) / `x86` / `x86_64` 均不产出。
+- **包体现状（0.2.2 release，按 ABI 拆包后）**：`arm64-v8a` 包 **6,142,542 B ≈ 5.9MB**、
+  `armeabi-v7a` 包 **6,003,851 B ≈ 5.7MB**（0.2.1 的通用包是 9,116,313 B —— 拆包每包少约 3MB，
+  native 依然是最大单项但占比降到约 50%：`lib/` 压缩后 3,114,114 / 2,975,385 B）。
+  两包其余部分几乎相同：`classes.dex` 1,646,269 B，`res/` 553,243 B，
+  `resources.arsc` 394,940 B，`assets/` 已完全为空。两个 APK 用**同一签名与同一 versionCode**，
+  安装时按设备 ABI 选包。下一步可压缩的空间已不大：PNG 调色板化（见 Icons 一节）与 R8 规则是
+  剩余手段；`lib/` 已无冗余 ABI，`assets/` 已无内容，语言资源已用 `resConfigs` 白名单过滤过。
+  改动构建配置后请重新量一次再下结论。
 - **已修：读页时的两处逐帧开销。** `drawBookmark` 原先挂在 `PDFView.onDrawAll` 上，且每次
   调用都 `BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)`——只要当前页
   有书签，**每一帧都会重新解码一张 PNG**；现改为 `by lazy` 缓存一次（`bookmarkBitmap`）。
@@ -53,9 +57,13 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - **`AndroidManifest` 已开 `largeHeap="true"`**：阅读页要分配整页位图，且 fork 的 part 缓存按
   **张数**计（`Constants.Cache.CACHE_SIZE = 120` × `PART_SIZE` 256 × 4B ≈ 30MB 上限），
   小堆设备上大页 PDF 会因 GC 抖动而掉帧。
-- **仍存在（未动）**：`DataManager.updatePDFs()` / `updateAll()` 是**主线程全量查库 + 重建
-  内存列表 + 重建封面列表**，在 `PreviewActivity.onPause` 的 `updateDB` 观察者里会跑一次，
-  书库大时会让「退出阅读页」掉帧；书架各处也用 `notifyDataSetChanged()` 全量重绑。
+- **部分已修：书架刷新的主线程成本。** 封面列表的构建已从 `DataManager.updateCoverList()`
+  的「按分组逐个全量扫描 + 排序」抽成纯函数 `CoverBuilder.build()`（一次 `groupBy`，总体
+  O(PDF 数 + 每组 k log k)），且 `getPdfList()` 不再复用会被下一次调用清空的 static `tempList`。
+  **但仍存在**：`updatePDFs()` / `updateAll()` 依旧是**主线程全量查库 + 重建内存列表**，在
+  `PreviewActivity.onPause` 的 `updateDB` 观察者里会跑一次，书库大时会让「退出阅读页」掉帧；
+  书架各处也仍是 `notifyDataSetChanged()` 全量重绑——`common/AdapterDiff.kt` 里的 `ListDiffer`
+  正是为替代它而写，但**目前没有任何调用方**（release 会被 R8 整个裁掉），尚未接入。
 - **仍存在：Overdraw 12 处**（5 个 Activity 布局）。阅读类应用对低端机影响较大，
   但改背景层需要逐屏核对，本次未动（`app_activity_preview.xml` 里 `app_pdfview_bg` 的
   `@color/base_white` 底、与 PDFView 自身 `@color/base_transparent` 背景都是候选）。
@@ -77,7 +85,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 
 ## Database (GreenDAO, schemaVersion 3)
 
-- Codegen output is **committed** at `app/src/main/java/com/sigpher/nopdf/common/greendao/` (`targetGenDir 'src/main/java'`). Bump `greendao { schemaVersion }` (`app/build.gradle:90-96`) and regenerate; never hand-edit `DaoMaster`/`*Dao`.
+- Codegen output is **committed** at `app/src/main/java/com/sigpher/nopdf/common/greendao/` (`targetGenDir 'src/main/java'`). Bump `greendao { schemaVersion }` (`app/build.gradle:98-104`) and regenerate; never hand-edit `DaoMaster`/`*Dao`.
 - **Two independent migration layers — a schema change usually needs both:**
   1. Schema: `UpdateOpenHelper.onUpgrade` → `MigrationHelper.migrate`. Its `onDropAllTables` calls `DaoMaster.dropAllTables`, which drops **every** table, so all DAOs (`PDFDao`, `CollectionDao`, `RecentPDFDao`) must stay in the vararg list at `UpdateOpenHelper.java:45` — an omitted DAO is recreated empty (data loss).
   2. Data backfill: `App.onCreate` calls `DBHelper.migrate()` only when `!isFirstInstall()` (compares `firstInstallTime == lastUpdateTime`) *and* a `DB_VERSION` pref is below `DaoMaster.SCHEMA_VERSION`. `migrate()` renumbers `position` and resets `scaleFactor`. A schema bump alone leaves this stale; the first-install guard also means the backfill never runs on a clean device.
@@ -98,6 +106,12 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   系统 `Toast.makeText`（`app_toast` 自定义卡片布局已随之删除）。同理，任何「失败只弹提示」的
   代码路径都会因此变成静默失败，排查时先确认提示真的能显示。
 - View binding is `kotlinx.android.synthetic` (20 files). Deprecated, but it is the convention — don't migrate a file to ViewBinding as a drive-by. Layouts do not use `android:onClick`.
+- **Settings 的 item 布局刻意复用同名 id**（`app_tv_title` / `app_tv_count` / `app_spinner` 在
+  `app_recycler_item_settings_switch` / `_recent_count` / `_page_spacing` 里重名），这样多个
+  holder 能共用一段绑定逻辑；代价是 `kotlinx.android.synthetic` 的星号导入会让这些名字产生
+  **重载歧义**，必须在 `SettingsAdapter` 顶部用**显式导入**把它定到其中一个布局（合成视图最终
+  都是对同一 id 做 `findViewById`，且这几个 id 在各布局里类型一致，定到哪个都等价）。
+  新增同类 item 布局时照此办理，不要再加 `page_spacing.view.*` 之类的星号导入。
 - Cross-component messaging is EventBus (event POJOs in `common/event/`, plus `common/LiveDataBus.kt` for sticky LiveData). Add a new event object per feature rather than reusing another feature's.
 - Kotlin-dominant; the Java is mostly generated GreenDAO code, `App`/`DataManager`/`AppConfig`/`PdfUtils`, and a few holders. Match the style of the file you edit.
 - Entrypoints: `main/MainActivity` (LAUNCHER, `singleTask`, splash theme) and `preview/PreviewActivity` (`exported=true`, handles `application/pdf` VIEW intents and imports the file through `DBHelper.insert`).
@@ -106,9 +120,13 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - `resourcePrefix 'app'` (`app/build.gradle:18`): every new resource must be `app_…`. Locales: `values` (en), `values-zh-rCN`, `values-zh-rHK/rMO/rSG/rTW`.
 - **`common/Settings.kt` 的几个默认值是刻意选定的，不要「顺手改回」**：
   `swipeHorizontal = false`（默认纵向滚动阅读）、`clickFlipPage = false`（点击只收放菜单、不翻页）、
-  `linearLayout = true`（书架默认列表布局）。`SPStaticUtils.getBoolean(key, default)` 的默认值
+  `linearLayout = true`（书架默认列表布局）、`pageSpacing = 0`（页面间隔默认关闭，保持原紧密排版）。
+  `SPStaticUtils.getBoolean/getInt(key, default)` 的默认值
   只在**没写过该 key 时**生效，所以改动会影响「装了新版但从未手动设置过该项」的用户；
   已在 SP 中留下键值的用户不受影响。
+- `pageSpacing` 是 **`PDFView` 的加载期参数**（`configurator.spacing(...)`），改后必须重新载入
+  文档才生效；`PreviewActivity` 仅在 `!swipeHorizontal`（纵向）时传入，并在
+  `onActivityResult(REQUEST_CODE_SETTINGS)` 里对比 `appliedPageSpacing` 决定是否重载。
 - `PreviewActivity` 调用了 `disableLongpress()`：长按没有任何消费者（选词查词已在 0.2.0 移除），
   关掉它能省掉 `GestureDetector` 的长按识别。该开关不影响滚动/缩放/翻页。`onTap` 被菜单收起
   与自动滚动暂停占用。
@@ -116,13 +134,13 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   子协程抛未捕获异常都会取消父 Job，**此后该 Activity 上所有 `launch` 都会静默失效**。凡是会抛
   异常的协程体都必须自己 try/catch（并放行 `CancellationException`）；不要再依赖「失败了弹个
   提示」这种兜底——提示本身也可能不可见（见上面 Toast 那条）。
-- `targetSdk 28` — no scoped storage, no `android:exported` enforcement. Themes are hardcoded `Theme.AppCompat.Light*`; there is no dark mode. Native libs are ARM-only and only `armeabi-v7a` + `arm64-v8a` (`armeabi`/ARMv5 was dropped — see above).
+- `targetSdk 28` — no scoped storage, no `android:exported` enforcement. Themes are hardcoded `Theme.AppCompat.Light*`; there is no dark mode. Native libs are ARM-only (`armeabi-v7a` + `arm64-v8a`; `armeabi`/ARMv5 dropped) and release is ABI-split into two APKs — see above.
 - Umeng analytics is live (`common/statistic/Statistic.kt`, hardcoded `APP_KEY`); LeakCanary is debug-only. Bugly/Tinker are fully commented out — `AppConfig.BUGLY_APPID` is dead.
 
 ## Testing
 
 - Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- `app/src/test/.../preview/ContentTreeTest.kt` (8 pure-JVM cases, Chinese backtick method names) is the only real suite; `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders.
+- Real suites (both pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse) and `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 16 tests, 0 failures.
 
 ## Icons
 
