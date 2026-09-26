@@ -181,6 +181,16 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     private var nextPage = 0
     private var canvas: Canvas? = null // AndroidPDFView 的画布
     private var paint: Paint = Paint() // 画书签的画笔
+    /**
+     * 书签角标位图，只解码一次并复用。
+     *
+     * 原先在 [drawBookmark] 里每次调用都 `BitmapFactory.decodeResource`，而该方法挂在
+     * `PDFView.onDrawAll` 上——只要当前页有书签，**每一帧都会重新解码一张 PNG**，
+     * 分配与解码开销直接表现为滚动/翻页卡顿。
+     */
+    private val bookmarkBitmap by lazy(LazyThreadSafetyMode.NONE) {
+        BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)
+    }
     private var pageWidth = 0F
     //endregion
 
@@ -1248,11 +1258,10 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     }
 
     private fun drawBookmark(canvas: Canvas?, pageWidth: Float) {
-        val bitmap = BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)
         val curPageWidth = pageWidth * scaleFactor
         val margin = (curPageWidth - pageWidth) / 3f
         val left = pageWidth - ConvertUtils.dp2px(36f) - margin
-        canvas?.drawBitmap(bitmap, left, 0f, paint)
+        canvas?.drawBitmap(bookmarkBitmap, left, 0f, paint)
     }
 
     private fun showQuickbar() {

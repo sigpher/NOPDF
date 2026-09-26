@@ -8,6 +8,7 @@
         android:allowBackup="true"
         android:icon="${app_icon}"
         android:label="${app_name}"
+        android:largeHeap="true"
         android:roundIcon="${app_icon_round}"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"

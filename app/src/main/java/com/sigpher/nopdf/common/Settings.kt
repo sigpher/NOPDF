@@ -34,8 +34,9 @@ object Settings {
         get() = SPStaticUtils.getString(SP_MAX_RECENT_COUNT, "9")
         set(value) = SPStaticUtils.put(SP_MAX_RECENT_COUNT, value)
 
+    /** 阅读方式：默认纵向（false = 竖向滚动）。 */
     var swipeHorizontal: Boolean
-        get() = SPStaticUtils.getBoolean(SP_SWIPE_HORIZONTAL, true)
+        get() = SPStaticUtils.getBoolean(SP_SWIPE_HORIZONTAL, false)
         set(value) = SPStaticUtils.put(SP_SWIPE_HORIZONTAL, value)
 
     var nightMode: Boolean
@@ -54,16 +55,18 @@ object Settings {
         get() = SPStaticUtils.getLong(SP_SCROLL_LEVEL, 8L)
         set(value) = SPStaticUtils.put(SP_SCROLL_LEVEL, value)
 
+    /** 点击翻页：默认关闭，避免误触翻页。 */
     var clickFlipPage: Boolean
-        get() = SPStaticUtils.getBoolean(SP_CLICK_FLIP_PAGE, true)
+        get() = SPStaticUtils.getBoolean(SP_CLICK_FLIP_PAGE, false)
         set(value) = SPStaticUtils.put(SP_CLICK_FLIP_PAGE, value)
 
     var keepScreenOn: Boolean
         get() = SPStaticUtils.getBoolean(SP_KEEP_SCREEN_ON, false)
         set(value) = SPStaticUtils.put(SP_KEEP_SCREEN_ON, value)
 
+    /** 线性布局：默认开启。 */
     var linearLayout: Boolean
-        get() = SPStaticUtils.getBoolean(SP_LINEAR_LAYOUT, false)
+        get() = SPStaticUtils.getBoolean(SP_LINEAR_LAYOUT, true)
         set(value) = SPStaticUtils.put(SP_LINEAR_LAYOUT, value)
 
     var scrollShortCut: Boolean

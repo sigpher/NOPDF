@@ -44,8 +44,21 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   **进一步压缩的最大杠杆是按 ABI 分包**（每包可再省约 2.9MB），其次是 PNG 调色板化
   （见 Icons 一节）与 R8 规则；`lib/` 已无冗余 ABI，`assets/` 已无内容，语言资源已用
   `resConfigs` 白名单过滤过。改动构建配置后请重新量一次再下结论。
+- **已修：读页时的两处逐帧开销。** `drawBookmark` 原先挂在 `PDFView.onDrawAll` 上，且每次
+  调用都 `BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)`——只要当前页
+  有书签，**每一帧都会重新解码一张 PNG**；现改为 `by lazy` 缓存一次（`bookmarkBitmap`）。
+  `GreyUI.grey` 原先在灰度**关闭**时也会 `setLayerType(LAYER_TYPE_HARDWARE, null)`，而
+  `LAYER_TYPE_HARDWARE` 即使不带 paint 也会让 decorView 先渲染进全屏离屏缓冲——由于灰度默认
+  关闭，等于**每个界面每帧都多一次全屏拷贝**；现关闭时显式回到 `LAYER_TYPE_NONE`。
+- **`AndroidManifest` 已开 `largeHeap="true"`**：阅读页要分配整页位图，且 fork 的 part 缓存按
+  **张数**计（`Constants.Cache.CACHE_SIZE = 120` × `PART_SIZE` 256 × 4B ≈ 30MB 上限），
+  小堆设备上大页 PDF 会因 GC 抖动而掉帧。
+- **仍存在（未动）**：`DataManager.updatePDFs()` / `updateAll()` 是**主线程全量查库 + 重建
+  内存列表 + 重建封面列表**，在 `PreviewActivity.onPause` 的 `updateDB` 观察者里会跑一次，
+  书库大时会让「退出阅读页」掉帧；书架各处也用 `notifyDataSetChanged()` 全量重绑。
 - **仍存在：Overdraw 12 处**（5 个 Activity 布局）。阅读类应用对低端机影响较大，
-  但改背景层需要逐屏核对，本次未动。
+  但改背景层需要逐屏核对，本次未动（`app_activity_preview.xml` 里 `app_pdfview_bg` 的
+  `@color/base_white` 底、与 PDFView 自身 `@color/base_transparent` 背景都是候选）。
 
 ## Lint
 
@@ -91,6 +104,11 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - `preview/PreviewActivity.kt` is ~1447 lines mixing rendering, gestures, bookmarks, TOC and page export — read it in sections. TOC expand/collapse is extracted into `preview/ContentTree.kt`, which (with its test) is the only extracted-and-tested piece.
 - Legacy names `AllFragment2` / `AllAdapter2` / `CollectionFragment2` / `CollectionAdapter2` are upstream YESPDF leftovers with no `…1` counterpart. Don't rename or "fix" them.
 - `resourcePrefix 'app'` (`app/build.gradle:18`): every new resource must be `app_…`. Locales: `values` (en), `values-zh-rCN`, `values-zh-rHK/rMO/rSG/rTW`.
+- **`common/Settings.kt` 的几个默认值是刻意选定的，不要「顺手改回」**：
+  `swipeHorizontal = false`（默认纵向滚动阅读）、`clickFlipPage = false`（点击只收放菜单、不翻页）、
+  `linearLayout = true`（书架默认列表布局）。`SPStaticUtils.getBoolean(key, default)` 的默认值
+  只在**没写过该 key 时**生效，所以改动会影响「装了新版但从未手动设置过该项」的用户；
+  已在 SP 中留下键值的用户不受影响。
 - `PreviewActivity` 调用了 `disableLongpress()`：长按没有任何消费者（选词查词已在 0.2.0 移除），
   关掉它能省掉 `GestureDetector` 的长按识别。该开关不影响滚动/缩放/翻页。`onTap` 被菜单收起
   与自动滚动暂停占用。
