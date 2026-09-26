@@ -141,6 +141,7 @@
     <string name="app_lookup_in_browser">浏览器查词</string>
     <string name="app_lookup_in_dict_app">海词词典</string>
     <string name="app_lookup_no_word">此处没有英文单词</string>
+    <string name="app_lookup_timeout">读取该页超时，请重试</string>
     <string name="app_lookup_no_target">没有可用于查词的应用</string>
 
 </resources>

@@ -59,6 +59,43 @@ class WordPickerTest {
     }
 
     @Test
+    fun `无空格字形时按横向间隙断词`() {
+        // 真实回归：很多 PDF 用 Td/TJ 定位排版，词与词之间没有空格字形。
+        // 旧实现会把整行连成一个词，导致英文判定失败、永远取不到词。
+        val chars = listOf(
+                CharBox(72f, 92f, 13f, 14f, "a"),
+                CharBox(85f, 92f, 13f, 14f, "l"),
+                CharBox(98f, 92f, 13f, 14f, "p"),
+                // 与上一个字符有 59pt 间隙（远超 0.28*14≈3.9pt 的阈值）→ 断词
+                CharBox(170f, 92f, 13f, 14f, "b"),
+                CharBox(183f, 92f, 13f, 14f, "e")
+        )
+        assertEquals(listOf("alp", "be"), WordPicker.words(chars).map { it.text })
+    }
+
+    @Test
+    fun `换行处断词`() {
+        val chars = listOf(
+                CharBox(72f, 92f, 13f, 14f, "a"),
+                CharBox(85f, 92f, 13f, 14f, "b"),
+                // y 变化 100pt > 0.5*14 → 视为换行
+                CharBox(72f, 192f, 13f, 14f, "c")
+        )
+        assertEquals(listOf("ab", "c"), WordPicker.words(chars).map { it.text })
+    }
+
+    @Test
+    fun `词内正常字距不会误断`() {
+        // 间隙 0pt，Helvetica 24pt 下正常
+        val chars = listOf(
+                CharBox(72f, 92f, 13.3f, 13.9f, "H"),
+                CharBox(85.3f, 92f, 13.3f, 13.9f, "e"),
+                CharBox(98.6f, 92f, 13.3f, 13.9f, "l")
+        )
+        assertEquals(listOf("Hel"), WordPicker.words(chars).map { it.text })
+    }
+
+    @Test
     fun `空输入不产生单词`() {
         assertTrue(WordPicker.words(emptyList()).isEmpty())
     }
@@ -107,6 +144,17 @@ class WordPickerTest {
     }
 
     @Test
+    fun `容差放大盒重叠时优先取严格命中的词`() {
+        val words = wordsOf("alpha beta")
+        // "alpha" x=0..50, "beta" x=60..110。x=70 严格落在 beta 内，
+        // 但 alpha 的容差放大盒（-8..58+8）在 x=58 处已越界到 beta 之前，
+        // 旧实现会先匹配 alpha。
+        val hit = WordPicker.wordAt(words, 70f, 106f, tolerance = 8f)
+
+        assertEquals("beta", hit?.text)
+    }
+
+    @Test
     fun `空词表恒不命中`() {
         assertNull(WordPicker.wordAt(emptyList(), 10f, 10f, tolerance = 100f))
     }
@@ -139,6 +187,25 @@ class WordPickerTest {
         assertFalse(WordPicker.isTranslatable("词典"))
         assertFalse(WordPicker.isTranslatable("hello词典"))
         assertFalse(WordPicker.isTranslatable("café"))
+    }
+
+    @Test
+    fun `去掉首尾标点后仍可查词`() {
+        // 回归：曾经直接用带标点的词做英文判定，逗号/括号会让整条被拒
+        assertEquals("language", WordPicker.normalize("language,"))
+        assertEquals("word", WordPicker.normalize("(word)"))
+        assertEquals("end", WordPicker.normalize("end."))
+        assertEquals("don't", WordPicker.normalize("don't"))
+        assertEquals("U.S.A", WordPicker.normalize("U.S.A."))
+        assertTrue(WordPicker.isTranslatable("language,"))
+        assertTrue(WordPicker.isTranslatable("(word)"))
+    }
+
+    @Test
+    fun `只有标点没有字母时归一化为空`() {
+        assertEquals("", WordPicker.normalize("..."))
+        assertEquals("", WordPicker.normalize(",;:")) 
+        assertFalse(WordPicker.isTranslatable("..."))
     }
 
     @Test
@@ -187,10 +254,26 @@ class WordPickerTest {
                 pageOffsetY = 60f
         )
 
-        // (70 + 100) / 2 - 40 = 45
-        assertEquals(45f, t.toPageX(70f), EPS)
-        // (105 + 50) / 2 - 60 = 17.5
-        assertEquals(17.5f, t.toPageY(105f), EPS)
+        // 三个量都是含缩放的视图像素，必须先相减再除以 zoom：
+        // (70 + 100 - 40) / 2 = 65
+        assertEquals(65f, t.toPageX(70f), EPS)
+        // (105 + 50 - 60) / 2 = 47.5
+        assertEquals(47.5f, t.toPageY(105f), EPS)
+    }
+
+    @Test
+    fun `先除缩放再减原点会得到错误结果`() {
+        // 回归：曾经把公式写成 (view + offset) / zoom - pageOffset，
+        // 等价于减了 pageOffset/zoom，在 zoom!=1 时偏差巨大。
+        val t = PageTransform(
+                zoom = 2f,
+                currentXOffset = 0f,
+                currentYOffset = 0f,
+                pageOffsetX = 200f,
+                pageOffsetY = 0f
+        )
+        // 正确：(500 - 200) / 2 = 150；错误：(500 / 2) - 200 = 50
+        assertEquals(150f, t.toPageX(500f), EPS)
     }
 
     @Test

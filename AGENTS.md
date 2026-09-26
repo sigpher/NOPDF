@@ -20,6 +20,23 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   无法通过升级获得。其 `libmodpdfium.so` 虽导出了 `FPDFText_*`（含 `FPDFText_GetCharIndexAtPos`），
   但 `libjniPdfium.so` 未做 JNI 绑定。因此凡是需要「拿到文字或文字坐标」的需求（选词、搜索、
   复制）都只能走 `com.tom-roush:pdfbox-android`（已引入），代价是与 pdfium 重复解析同一份文件。
+- **选词查词的坐标换算顺序不能写反。** `PDFView` 绘制时页面原点在视图像素里是
+  `pageOrigin - currentOffset`（`PDFView.java:692-702`），页面点再乘 `zoom`。
+  所以逆变换必须是 `(viewX + currentOffset - pageOrigin) / zoom`；
+  写成 `(viewX + currentOffset) / zoom - pageOrigin` 等于减了 `pageOrigin/zoom`，
+  在 `fitEachPage` 的 zoom≈1.76 下 y 会偏 60+ 点，**表现为「怎么长按都取不到词」**。
+  三个量都是「含缩放」的视图像素，必须先相减再除。
+- **切词不能只按空白字符。** 很多 PDF（`Td`/`TJ` 定位排版）根本没有空格字形，
+  纯空白切分会把整页连成一个超长词，英文判定必然失败。`WordPicker.words()` 因此还按
+  「换行」和「横向间隙 > 0.28×字高」断词。
+- PDFBox 的 `TextPosition.getXDirAdj()/getYDirAdj()` 是**页面点、原点左上、y 向下**
+  （实测：792pt 页面、PDF y=700 的文字得到 yDirAdj=92）。与 PDFView 的绘制方向一致。
+- `PDFBoxResourceLoader.init(context)` 是必需的：glyphlist 等资源在 AAR 的 `assets/` 下，
+  漏掉会抛 `GlyphList ... not found`，而 `PdfPageTextExtractor` 会把它吞成空列表 →
+  表现为「取不到词」。该类会碰 `android.graphics.Path/Paint/PointF` 与 `android.util.Log`，
+  无法在纯 JVM 上跑（要用 PDFBox 验证提取，得自备这些类的桩）。
+- 取词调试日志 tag 为 `PdfLookup`，会打印命中的页码、视口/页面坐标、zoom、解析出的词数。
+  「无反应」时先看 logcat 确认是否进了 `lookup:`。
 - `PDFView` 的 `pdfFile` 字段是包内可见、`swipeVertical` 与 `PdfFile.isVertical` 是 private，
   外部无法自行把触点换算成页面坐标；已新增 `PDFView.getPageOriginOnCanvas(int)` 封装该换算。
   页面原点的主轴随滚动方向变化（竖向主轴是 Y），不要想当然只用 `getPageOffset`。

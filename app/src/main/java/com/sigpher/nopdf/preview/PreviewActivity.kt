@@ -45,6 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -1067,9 +1068,19 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
      * 3. 扫描版 PDF 没有文本层，会取不到词，只提示不崩溃。
      */
     private fun lookupWordAt(viewX: Float, viewY: Float) {
-        val path = pdf?.path ?: return
+        val path = pdf?.path
+        if (path.isNullOrEmpty()) {
+            LogUtils.e(TAG_LOOKUP, "lookup: no pdf path, abort")
+            UiManager.showCenterShort(R.string.app_lookup_no_word)
+            return
+        }
         val page = app_pdfview.currentPage
-        val origin = app_pdfview.getPageOriginOnCanvas(page) ?: return
+        val origin = app_pdfview.getPageOriginOnCanvas(page)
+        if (origin == null) {
+            LogUtils.e(TAG_LOOKUP, "lookup: document not loaded yet, abort")
+            UiManager.showCenterShort(R.string.app_lookup_no_word)
+            return
+        }
         val transform = PageTransform(
                 zoom = app_pdfview.zoom,
                 currentXOffset = app_pdfview.currentXOffset,
@@ -1082,21 +1093,34 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         val tolerance = transform.viewToPageLength(WordPicker.TAP_TOLERANCE_PX)
         val appContext = applicationContext
         val pwd = password
+        LogUtils.d(TAG_LOOKUP, "lookup: page=$page view=($viewX,$viewY) page=($pageX,$pageY) zoom=${transform.zoom} tol=$tolerance")
         launch {
-            val words = withContext(Dispatchers.IO) {
-                val chars = PdfPageTextExtractor.get()
-                        .pageChars(appContext, path, page, pwd)
-                WordPicker.words(chars)
+            // PDFBox 要重新解析整份 PDF，大文件可能很慢；加超时兜底，
+            // 否则用户只会看到「按了没反应」。
+            val words = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) {
+                    val chars = PdfPageTextExtractor.get()
+                            .pageChars(appContext, path, page, pwd)
+                    WordPicker.words(chars)
+                }
             }
             if (!isActive) {
                 return@launch
             }
+            if (words == null) {
+                LogUtils.e(TAG_LOOKUP, "lookup: parse timeout after ${LOOKUP_TIMEOUT_MS}ms")
+                UiManager.showCenterShort(R.string.app_lookup_timeout)
+                return@launch
+            }
+            LogUtils.d(TAG_LOOKUP, "lookup: parsed ${words.size} words on page $page")
             val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
-            if (word == null || !WordPicker.isTranslatable(word.text)) {
+            val target = word?.text?.let { WordPicker.normalize(it) }
+            if (target.isNullOrEmpty() || !WordPicker.isTranslatable(target)) {
+                LogUtils.d(TAG_LOOKUP, "lookup: no translatable word at ($pageX,$pageY), hit=${word?.text}")
                 UiManager.showCenterShort(R.string.app_lookup_no_word)
                 return@launch
             }
-            showWordLookupDialog(word.text)
+            showWordLookupDialog(target)
         }
     }
 
@@ -1449,6 +1473,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         private const val OFFSET_Y = -0.5f // 自动滚动的偏离值
         private const val ANIM_DURATION = 250L
         private const val SCALE_VIEW_ITEM_ANIM_DURATION = 150L
+        private const val TAG_LOOKUP = "PdfLookup"
+        private const val LOOKUP_TIMEOUT_MS = 8000L
         private val SCALE_VIEW_ITEM_TRANS_VALUE = ConvertUtils.dp2px(12f).toFloat()
         /**
          * 非外部文件打开

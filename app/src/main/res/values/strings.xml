@@ -135,6 +135,7 @@
     <string name="app_lookup_in_browser">Look up in browser</string>
     <string name="app_lookup_in_dict_app">Haici Dictionary</string>
     <string name="app_lookup_no_word">No English word here</string>
+    <string name="app_lookup_timeout">Timed out reading this page</string>
     <string name="app_lookup_no_target">No app available to look up this word</string>
 
     <string-array name="max_recent_count" tools:ignore="ResourceName">
