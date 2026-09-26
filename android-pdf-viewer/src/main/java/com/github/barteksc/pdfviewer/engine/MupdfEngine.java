@@ -34,14 +34,17 @@ class MupdfEngine implements PdfEngine {
     /**
      * Per-document state. MuPDF hands out an independently allocated {@code Page} per
      * {@code loadPage} call, and callers above this layer are written against pdfium's model
-     * where a page is opened once and then rendered repeatedly ({@code PdfFile} keeps an
-     * {@code openedPages} set for exactly that reason). The cache reconciles the two: opening
-     * a page loads it once, and every later render of that page reuses the handle.
+     * where a page is opened once and then rendered repeatedly ({@code PdfFile} keeps a
+     * {@code PageResidency} set for exactly that reason). The cache reconciles the two: while a
+     * page is held, opening it loads it once and every later render of it reuses the handle.
      *
-     * <p>Entries are released by {@link #closeDocument}. Nothing here evicts on its own — the
-     * bound on how many pages are resident comes from the caller, which only opens the pages
-     * it intends to keep around. (Measuring a page is the exception: {@link #getPageSize}
-     * must not add to this map, or setting up a document would load every page in it.)
+     * <p>Held pages are released by {@link #closePage} and everything by {@link #closeDocument}.
+     * The cap on how many are held at once belongs to the caller, not here, and that is the
+     * important part: a {@code Page} holds the page's parsed contents and resources, so under
+     * MuPDF an open page is real memory rather than the near-free native handle pdfium handed
+     * out, and nothing evicts on its own. (Measuring a page is the exception to the caching in
+     * this class: {@link #getPageSize} must not add to this map, or setting up a document
+     * would load every page in it.)
      *
      * <p>All access to {@code pages} is guarded by the instance monitor. Unlike pdfium, whose
      * per-page state lived behind native handles, this map is plain Java shared between the
@@ -69,6 +72,14 @@ class MupdfEngine implements PdfEngine {
 
         synchronized Page cachedPage(int pageIndex) {
             return pages.get(pageIndex);
+        }
+
+        synchronized void releasePage(int pageIndex) {
+            Page page = pages.get(pageIndex);
+            if (page != null) {
+                pages.remove(pageIndex);
+                page.destroy();
+            }
         }
 
         synchronized void destroyPages() {
@@ -208,6 +219,11 @@ class MupdfEngine implements PdfEngine {
         page(handle, pageIndex);
     }
 
+    @Override
+    public void closePage(EngineDocument handle, int pageIndex) {
+        muDoc(handle).releasePage(pageIndex);
+    }
+
     /**
      * Renders the page-relative tile {@code bounds} (fractions of the page) into {@code bitmap}.
      *
@@ -235,6 +251,10 @@ class MupdfEngine implements PdfEngine {
                             + bitmap.getConfig() + " for page " + pageIndex
                             + "; see androiddrawdevice.c (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)");
         }
+        // Take the page first: measuring goes through getPageSize, which for a resident page
+        // reads the cache rather than loading and releasing a second copy of it. Every tile of
+        // a page comes through here, so the order is worth spelling out.
+        Page page = page(handle, pageIndex);
         EngineSize pageSize = getPageSize(handle, pageIndex);
         PageRegion.Region region = PageRegion.of(bounds.left, bounds.top, bounds.right,
                 bounds.bottom, pageSize.getWidth(), pageSize.getHeight());
@@ -242,7 +262,6 @@ class MupdfEngine implements PdfEngine {
             return;
         }
         float[] transform = PageRegion.deviceTransform(region, bitmap.getWidth(), bitmap.getHeight());
-        Page page = page(handle, pageIndex);
         Matrix ctm = new Matrix(transform[0], 0f, 0f, transform[1], transform[2], transform[3]);
         AndroidDrawDevice device = new AndroidDrawDevice(bitmap, 0, 0, true);
         try {
@@ -343,9 +362,19 @@ class MupdfEngine implements PdfEngine {
 
     @Override
     public List<EngineLink> getPageLinks(EngineDocument handle, int pageIndex) {
-        Link[] links;
+        Link[] links = null;
+        // Deliberately a transient page rather than one from the resident cache: this runs on
+        // the main thread when the user taps a link, and leaving the page behind would both
+        // pin it and count against the residency cap the renderer maintains. The load itself
+        // stays inside the try, so a page that will not open still yields no links rather
+        // than an exception on the main thread.
         try {
-            links = page(handle, pageIndex).getLinks();
+            Page page = page(handle, pageIndex);
+            try {
+                links = page.getLinks();
+            } finally {
+                muDoc(handle).releasePage(pageIndex);
+            }
         } catch (Throwable t) {
             return new ArrayList<>();
         }

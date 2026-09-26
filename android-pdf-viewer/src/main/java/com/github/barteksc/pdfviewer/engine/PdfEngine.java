@@ -44,6 +44,16 @@ public interface PdfEngine {
     void openPage(EngineDocument document, int pageIndex);
 
     /**
+     * Releases whatever {@link #openPage} allocated for a page.
+     *
+     * <p>Symmetric with {@link #openPage}: a closed page can be opened again, and will simply be
+     * loaded afresh. Callers use this to cap how many pages are held at once, which
+     * {@link #openPage} does not do on its own — the difference in cost between engines is what
+     * makes that necessary. Closing a page that was never opened must be a no-op.
+     */
+    void closePage(EngineDocument document, int pageIndex);
+
+    /**
      * Renders one tile of a page into {@code bitmap}, which the caller has already sized.
      *
      * <p>{@code bounds} is <em>page-relative</em>: fractions of the page in 0..1, origin at the
