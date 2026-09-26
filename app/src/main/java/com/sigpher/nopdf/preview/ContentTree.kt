@@ -3,8 +3,10 @@ package com.sigpher.nopdf.preview
 /**
  * 目录（PDF 书签树）的纯数据模型与展开/折叠逻辑。
  *
- * 这里刻意不依赖任何 Android API，也不依赖 pdfium 的 [com.shockwave.pdfium.PdfDocument.Bookmark]，
- * 因此可以直接用 JVM 单元测试覆盖（见 ContentTreeTest）。
+ * 这里刻意不依赖任何 Android API，也不依赖引擎层的
+ * [com.github.barteksc.pdfviewer.engine.EngineBookmark]，因此可以直接用 JVM 单元测试覆盖
+ * （见 ContentTreeTest）。注意也正因如此，这些测试**检测不到换引擎带来的回归**——
+ * 换引擎的验证不能只靠它们。
  *
  * @author aaronzzxup@gmail.com
  */

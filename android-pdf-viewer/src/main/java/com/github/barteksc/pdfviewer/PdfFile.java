@@ -23,10 +23,13 @@ import android.util.SparseBooleanArray;
 import com.github.barteksc.pdfviewer.exception.PageRenderingException;
 import com.github.barteksc.pdfviewer.util.FitPolicy;
 import com.github.barteksc.pdfviewer.util.PageSizeCalculator;
-import com.shockwave.pdfium.PdfDocument;
-import com.shockwave.pdfium.PdfiumCore;
-import com.shockwave.pdfium.util.Size;
-import com.shockwave.pdfium.util.SizeF;
+import com.github.barteksc.pdfviewer.engine.EngineBookmark;
+import com.github.barteksc.pdfviewer.engine.EngineDocument;
+import com.github.barteksc.pdfviewer.engine.EngineLink;
+import com.github.barteksc.pdfviewer.engine.EngineMeta;
+import com.github.barteksc.pdfviewer.engine.EngineSize;
+import com.github.barteksc.pdfviewer.engine.EngineSizeF;
+import com.github.barteksc.pdfviewer.engine.PdfEngine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,23 +37,23 @@ import java.util.List;
 class PdfFile {
 
     private static final Object lock = new Object();
-    private PdfDocument pdfDocument;
-    private PdfiumCore pdfiumCore;
+    private EngineDocument document;
+    private PdfEngine engine;
     private int pagesCount = 0;
     /** Original page sizes */
-    private List<Size> originalPageSizes = new ArrayList<>();
+    private List<EngineSize> originalPageSizes = new ArrayList<>();
     /** Scaled page sizes */
-    private List<SizeF> pageSizes = new ArrayList<>();
+    private List<EngineSizeF> pageSizes = new ArrayList<>();
     /** Opened pages with indicator whether opening was successful */
     private SparseBooleanArray openedPages = new SparseBooleanArray();
     /** Page with maximum width */
-    private Size originalMaxWidthPageSize = new Size(0, 0);
+    private EngineSize originalMaxWidthPageSize = new EngineSize(0, 0);
     /** Page with maximum height */
-    private Size originalMaxHeightPageSize = new Size(0, 0);
+    private EngineSize originalMaxHeightPageSize = new EngineSize(0, 0);
     /** Scaled page with maximum height */
-    private SizeF maxHeightPageSize = new SizeF(0, 0);
+    private EngineSizeF maxHeightPageSize = new EngineSizeF(0, 0);
     /** Scaled page with maximum width */
-    private SizeF maxWidthPageSize = new SizeF(0, 0);
+    private EngineSizeF maxWidthPageSize = new EngineSizeF(0, 0);
     /** True if scrolling is vertical, else it's horizontal */
     private boolean isVertical;
     /** Fixed spacing between pages in pixels */
@@ -75,10 +78,10 @@ class PdfFile {
      */
     private int[] originalUserPages;
 
-    PdfFile(PdfiumCore pdfiumCore, PdfDocument pdfDocument, FitPolicy pageFitPolicy, Size viewSize, int[] originalUserPages,
+    PdfFile(PdfEngine engine, EngineDocument document, FitPolicy pageFitPolicy, EngineSize viewSize, int[] originalUserPages,
             boolean isVertical, int spacing, boolean autoSpacing, boolean fitEachPage) {
-        this.pdfiumCore = pdfiumCore;
-        this.pdfDocument = pdfDocument;
+        this.engine = engine;
+        this.document = document;
         this.pageFitPolicy = pageFitPolicy;
         this.originalUserPages = originalUserPages;
         this.isVertical = isVertical;
@@ -88,15 +91,15 @@ class PdfFile {
         setup(viewSize);
     }
 
-    private void setup(Size viewSize) {
+    private void setup(EngineSize viewSize) {
         if (originalUserPages != null) {
             pagesCount = originalUserPages.length;
         } else {
-            pagesCount = pdfiumCore.getPageCount(pdfDocument);
+            pagesCount = engine.getPageCount(document);
         }
 
         for (int i = 0; i < pagesCount; i++) {
-            Size pageSize = pdfiumCore.getPageSize(pdfDocument, documentPage(i));
+            EngineSize pageSize = engine.getPageSize(document, documentPage(i));
             if (pageSize.getWidth() > originalMaxWidthPageSize.getWidth()) {
                 originalMaxWidthPageSize = pageSize;
             }
@@ -114,14 +117,14 @@ class PdfFile {
      *
      * @param viewSize new size of changed view
      */
-    public void recalculatePageSizes(Size viewSize) {
+    public void recalculatePageSizes(EngineSize viewSize) {
         pageSizes.clear();
         PageSizeCalculator calculator = new PageSizeCalculator(pageFitPolicy, originalMaxWidthPageSize,
                 originalMaxHeightPageSize, viewSize, fitEachPage);
         maxWidthPageSize = calculator.getOptimalMaxWidthPageSize();
         maxHeightPageSize = calculator.getOptimalMaxHeightPageSize();
 
-        for (Size size : originalPageSizes) {
+        for (EngineSize size : originalPageSizes) {
             pageSizes.add(calculator.calculate(size));
         }
         if (autoSpacing) {
@@ -135,17 +138,17 @@ class PdfFile {
         return pagesCount;
     }
 
-    public SizeF getPageSize(int pageIndex) {
+    public EngineSizeF getPageSize(int pageIndex) {
         int docPage = documentPage(pageIndex);
         if (docPage < 0) {
-            return new SizeF(0, 0);
+            return new EngineSizeF(0, 0);
         }
         return pageSizes.get(pageIndex);
     }
 
-    public SizeF getScaledPageSize(int pageIndex, float zoom) {
-        SizeF size = getPageSize(pageIndex);
-        return new SizeF(size.getWidth() * zoom, size.getHeight() * zoom);
+    public EngineSizeF getScaledPageSize(int pageIndex, float zoom) {
+        EngineSizeF size = getPageSize(pageIndex);
+        return new EngineSizeF(size.getWidth() * zoom, size.getHeight() * zoom);
     }
 
     /**
@@ -153,7 +156,7 @@ class PdfFile {
      *
      * @return size of page
      */
-    public SizeF getMaxPageSize() {
+    public EngineSizeF getMaxPageSize() {
         return isVertical ? maxWidthPageSize : maxHeightPageSize;
     }
 
@@ -165,10 +168,10 @@ class PdfFile {
         return getMaxPageSize().getHeight();
     }
 
-    private void prepareAutoSpacing(Size viewSize) {
+    private void prepareAutoSpacing(EngineSize viewSize) {
         pageSpacing.clear();
         for (int i = 0; i < getPagesCount(); i++) {
-            SizeF pageSize = pageSizes.get(i);
+            EngineSizeF pageSize = pageSizes.get(i);
             float spacing = Math.max(0, isVertical ? viewSize.getHeight() - pageSize.getHeight() :
                     viewSize.getWidth() - pageSize.getWidth());
             if (i < getPagesCount() - 1) {
@@ -181,7 +184,7 @@ class PdfFile {
     private void prepareDocLen() {
         float length = 0;
         for (int i = 0; i < getPagesCount(); i++) {
-            SizeF pageSize = pageSizes.get(i);
+            EngineSizeF pageSize = pageSizes.get(i);
             length += isVertical ? pageSize.getHeight() : pageSize.getWidth();
             if (autoSpacing) {
                 length += pageSpacing.get(i);
@@ -196,7 +199,7 @@ class PdfFile {
         pageOffsets.clear();
         float offset = 0;
         for (int i = 0; i < getPagesCount(); i++) {
-            SizeF pageSize = pageSizes.get(i);
+            EngineSizeF pageSize = pageSizes.get(i);
             float size = isVertical ? pageSize.getHeight() : pageSize.getWidth();
             if (autoSpacing) {
                 offset += pageSpacing.get(i) / 2f;
@@ -222,7 +225,7 @@ class PdfFile {
      * Get the page's height if swiping vertical, or width if swiping horizontal.
      */
     public float getPageLength(int pageIndex, float zoom) {
-        SizeF size = getPageSize(pageIndex);
+        EngineSizeF size = getPageSize(pageIndex);
         return (isVertical ? size.getHeight() : size.getWidth()) * zoom;
     }
 
@@ -242,7 +245,7 @@ class PdfFile {
 
     /** Get secondary page offset, that is X for vertical scroll and Y for horizontal scroll */
     public float getSecondaryPageOffset(int pageIndex, float zoom) {
-        SizeF pageSize = getPageSize(pageIndex);
+        EngineSizeF pageSize = getPageSize(pageIndex);
         if (isVertical) {
             float maxWidth = getMaxPageWidth();
             return zoom * (maxWidth - pageSize.getWidth()) / 2; //x
@@ -273,7 +276,7 @@ class PdfFile {
         synchronized (lock) {
             if (openedPages.indexOfKey(docPage) < 0) {
                 try {
-                    pdfiumCore.openPage(pdfDocument, docPage);
+                    engine.openPage(document, docPage);
                     openedPages.put(docPage, true);
                     return true;
                 } catch (Exception e) {
@@ -292,41 +295,40 @@ class PdfFile {
 
     public void renderPageBitmap(Bitmap bitmap, int pageIndex, Rect bounds, boolean annotationRendering) {
         int docPage = documentPage(pageIndex);
-        pdfiumCore.renderPageBitmap(pdfDocument, bitmap, docPage,
-                bounds.left, bounds.top, bounds.width(), bounds.height(), annotationRendering);
+        engine.renderPageBitmap(document, bitmap, docPage, bounds, annotationRendering);
     }
 
-    public PdfDocument.Meta getMetaData() {
-        if (pdfDocument == null) {
+    public EngineMeta getMetaData() {
+        if (document == null) {
             return null;
         }
-        return pdfiumCore.getDocumentMeta(pdfDocument);
+        return engine.getDocumentMeta(document);
     }
 
-    public List<PdfDocument.Bookmark> getBookmarks() {
-        if (pdfDocument == null) {
+    public List<EngineBookmark> getBookmarks() {
+        if (document == null) {
             return new ArrayList<>();
         }
-        return pdfiumCore.getTableOfContents(pdfDocument);
+        return engine.getTableOfContents(document);
     }
 
-    public List<PdfDocument.Link> getPageLinks(int pageIndex) {
+    public List<EngineLink> getPageLinks(int pageIndex) {
         int docPage = documentPage(pageIndex);
-        return pdfiumCore.getPageLinks(pdfDocument, docPage);
+        return engine.getPageLinks(document, docPage);
     }
 
     public RectF mapRectToDevice(int pageIndex, int startX, int startY, int sizeX, int sizeY,
                                  RectF rect) {
         int docPage = documentPage(pageIndex);
-        return pdfiumCore.mapRectToDevice(pdfDocument, docPage, startX, startY, sizeX, sizeY, 0, rect);
+        return engine.mapRectToDevice(document, docPage, startX, startY, sizeX, sizeY, rect);
     }
 
     public void dispose() {
-        if (pdfiumCore != null && pdfDocument != null) {
-            pdfiumCore.closeDocument(pdfDocument);
+        if (engine != null && document != null) {
+            engine.closeDocument(document);
         }
 
-        pdfDocument = null;
+        document = null;
         originalUserPages = null;
     }
 

@@ -18,9 +18,9 @@ package com.github.barteksc.pdfviewer;
 import android.os.AsyncTask;
 
 import com.github.barteksc.pdfviewer.source.DocumentSource;
-import com.shockwave.pdfium.PdfDocument;
-import com.shockwave.pdfium.PdfiumCore;
-import com.shockwave.pdfium.util.Size;
+import com.github.barteksc.pdfviewer.engine.EngineDocument;
+import com.github.barteksc.pdfviewer.engine.EngineSize;
+import com.github.barteksc.pdfviewer.engine.PdfEngine;
 
 import java.lang.ref.WeakReference;
 
@@ -30,19 +30,19 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
 
     private WeakReference<PDFView> pdfViewReference;
 
-    private PdfiumCore pdfiumCore;
+    private PdfEngine engine;
     private String password;
     private DocumentSource docSource;
     private int[] userPages;
     private PdfFile pdfFile;
 
-    DecodingAsyncTask(DocumentSource docSource, String password, int[] userPages, PDFView pdfView, PdfiumCore pdfiumCore) {
+    DecodingAsyncTask(DocumentSource docSource, String password, int[] userPages, PDFView pdfView, PdfEngine engine) {
         this.docSource = docSource;
         this.userPages = userPages;
         this.cancelled = false;
         this.pdfViewReference = new WeakReference<>(pdfView);
         this.password = password;
-        this.pdfiumCore = pdfiumCore;
+        this.engine = engine;
     }
 
     @Override
@@ -50,8 +50,8 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
         try {
             PDFView pdfView = pdfViewReference.get();
             if (pdfView != null) {
-                PdfDocument pdfDocument = docSource.createDocument(pdfView.getContext(), pdfiumCore, password);
-                pdfFile = new PdfFile(pdfiumCore, pdfDocument, pdfView.getPageFitPolicy(), getViewSize(pdfView),
+                EngineDocument document = docSource.createDocument(pdfView.getContext(), engine, password);
+                pdfFile = new PdfFile(engine, document, pdfView.getPageFitPolicy(), getViewSize(pdfView),
                         userPages, pdfView.isSwipeVertical(), pdfView.getSpacingPx(), pdfView.isAutoSpacingEnabled(),
                         pdfView.isFitEachPage());
                 return null;
@@ -64,8 +64,8 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
         }
     }
 
-    private Size getViewSize(PDFView pdfView) {
-        return new Size(pdfView.getWidth(), pdfView.getHeight());
+    private EngineSize getViewSize(PDFView pdfView) {
+        return new EngineSize(pdfView.getWidth(), pdfView.getHeight());
     }
 
     @Override

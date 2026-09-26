@@ -17,11 +17,11 @@ package com.github.barteksc.pdfviewer.source;
 
 import android.content.Context;
 
-import com.shockwave.pdfium.PdfDocument;
-import com.shockwave.pdfium.PdfiumCore;
+import com.github.barteksc.pdfviewer.engine.EngineDocument;
+import com.github.barteksc.pdfviewer.engine.PdfEngine;
 
 import java.io.IOException;
 
 public interface DocumentSource {
-    PdfDocument createDocument(Context context, PdfiumCore core, String password) throws IOException;
+    EngineDocument createDocument(Context context, PdfEngine engine, String password) throws IOException;
 }

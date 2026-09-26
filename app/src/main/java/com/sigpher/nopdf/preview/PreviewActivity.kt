@@ -35,8 +35,8 @@ import com.blankj.utilcode.util.*
 import com.github.barteksc.pdfviewer.PDFView
 import com.github.barteksc.pdfviewer.PDFView.Configurator
 import com.google.gson.reflect.TypeToken
-import com.shockwave.pdfium.PdfDocument
-import com.shockwave.pdfium.PdfPasswordException
+import com.github.barteksc.pdfviewer.engine.EngineBookmark
+import com.github.barteksc.pdfviewer.engine.PasswordRequiredException
 import kotlinx.android.synthetic.main.app_activity_preview.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -171,7 +171,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     private var autoScrollJob: Job? = null // 自动滚动
     private var isPause = false
     private var hideBar = false
-    private val contentMap: MutableMap<Long, PdfDocument.Bookmark> = HashMap()
+    private val contentMap: MutableMap<Long, EngineBookmark> = HashMap()
     private val bookmarkMap: MutableMap<Long, Bookmark> = HashMap()
     private val pageList: MutableList<Long> = ArrayList()
 
@@ -1176,7 +1176,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     }
 
     private fun showError(throwable: Throwable) {
-        if (throwable is PdfPasswordException) {
+        if (throwable is PasswordRequiredException) {
             if (!StringUtils.isEmpty(password)) {
                 UiManager.showCenterShort(R.string.app_password_error)
             }
@@ -1308,7 +1308,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                 .start()
     }
 
-    private fun findContent(list: List<PdfDocument.Bookmark>) {
+    private fun findContent(list: List<EngineBookmark>) {
         for (bk in list) {
             contentMap[bk.pageIdx] = bk
             if (bk.hasChildren()) {

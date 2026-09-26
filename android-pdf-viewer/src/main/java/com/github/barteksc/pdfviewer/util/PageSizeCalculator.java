@@ -15,23 +15,23 @@
  */
 package com.github.barteksc.pdfviewer.util;
 
-import com.shockwave.pdfium.util.Size;
-import com.shockwave.pdfium.util.SizeF;
+import com.github.barteksc.pdfviewer.engine.EngineSize;
+import com.github.barteksc.pdfviewer.engine.EngineSizeF;
 
 public class PageSizeCalculator {
 
     private FitPolicy fitPolicy;
-    private final Size originalMaxWidthPageSize;
-    private final Size originalMaxHeightPageSize;
-    private final Size viewSize;
-    private SizeF optimalMaxWidthPageSize;
-    private SizeF optimalMaxHeightPageSize;
+    private final EngineSize originalMaxWidthPageSize;
+    private final EngineSize originalMaxHeightPageSize;
+    private final EngineSize viewSize;
+    private EngineSizeF optimalMaxWidthPageSize;
+    private EngineSizeF optimalMaxHeightPageSize;
     private float widthRatio;
     private float heightRatio;
     private boolean fitEachPage;
 
-    public PageSizeCalculator(FitPolicy fitPolicy, Size originalMaxWidthPageSize, Size originalMaxHeightPageSize,
-                              Size viewSize, boolean fitEachPage) {
+    public PageSizeCalculator(FitPolicy fitPolicy, EngineSize originalMaxWidthPageSize, EngineSize originalMaxHeightPageSize,
+                              EngineSize viewSize, boolean fitEachPage) {
         this.fitPolicy = fitPolicy;
         this.originalMaxWidthPageSize = originalMaxWidthPageSize;
         this.originalMaxHeightPageSize = originalMaxHeightPageSize;
@@ -40,9 +40,9 @@ public class PageSizeCalculator {
         calculateMaxPages();
     }
 
-    public SizeF calculate(Size pageSize) {
+    public EngineSizeF calculate(EngineSize pageSize) {
         if (pageSize.getWidth() <= 0 || pageSize.getHeight() <= 0) {
-            return new SizeF(0, 0);
+            return new EngineSizeF(0, 0);
         }
         float maxWidth = fitEachPage ? viewSize.getWidth() : pageSize.getWidth() * widthRatio;
         float maxHeight = fitEachPage ? viewSize.getHeight() : pageSize.getHeight() * heightRatio;
@@ -56,11 +56,11 @@ public class PageSizeCalculator {
         }
     }
 
-    public SizeF getOptimalMaxWidthPageSize() {
+    public EngineSizeF getOptimalMaxWidthPageSize() {
         return optimalMaxWidthPageSize;
     }
 
-    public SizeF getOptimalMaxHeightPageSize() {
+    public EngineSizeF getOptimalMaxHeightPageSize() {
         return optimalMaxHeightPageSize;
     }
 
@@ -72,7 +72,7 @@ public class PageSizeCalculator {
                 optimalMaxWidthPageSize = fitHeight(originalMaxWidthPageSize, originalMaxWidthPageSize.getHeight() * heightRatio);
                 break;
             case BOTH:
-                SizeF localOptimalMaxWidth = fitBoth(originalMaxWidthPageSize, viewSize.getWidth(), viewSize.getHeight());
+                EngineSizeF localOptimalMaxWidth = fitBoth(originalMaxWidthPageSize, viewSize.getWidth(), viewSize.getHeight());
                 float localWidthRatio = localOptimalMaxWidth.getWidth() / originalMaxWidthPageSize.getWidth();
                 this.optimalMaxHeightPageSize = fitBoth(originalMaxHeightPageSize, originalMaxHeightPageSize.getWidth() * localWidthRatio,
                         viewSize.getHeight());
@@ -88,23 +88,23 @@ public class PageSizeCalculator {
         }
     }
 
-    private SizeF fitWidth(Size pageSize, float maxWidth) {
+    private EngineSizeF fitWidth(EngineSize pageSize, float maxWidth) {
         float w = pageSize.getWidth(), h = pageSize.getHeight();
         float ratio = w / h;
         w = maxWidth;
         h = (float) Math.floor(maxWidth / ratio);
-        return new SizeF(w, h);
+        return new EngineSizeF(w, h);
     }
 
-    private SizeF fitHeight(Size pageSize, float maxHeight) {
+    private EngineSizeF fitHeight(EngineSize pageSize, float maxHeight) {
         float w = pageSize.getWidth(), h = pageSize.getHeight();
         float ratio = h / w;
         h = maxHeight;
         w = (float) Math.floor(maxHeight / ratio);
-        return new SizeF(w, h);
+        return new EngineSizeF(w, h);
     }
 
-    private SizeF fitBoth(Size pageSize, float maxWidth, float maxHeight) {
+    private EngineSizeF fitBoth(EngineSize pageSize, float maxWidth, float maxHeight) {
         float w = pageSize.getWidth(), h = pageSize.getHeight();
         float ratio = w / h;
         w = maxWidth;
@@ -113,7 +113,7 @@ public class PageSizeCalculator {
             h = maxHeight;
             w = (float) Math.floor(maxHeight * ratio);
         }
-        return new SizeF(w, h);
+        return new EngineSizeF(w, h);
     }
 
 }

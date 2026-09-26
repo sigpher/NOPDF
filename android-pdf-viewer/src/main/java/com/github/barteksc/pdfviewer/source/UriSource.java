@@ -19,8 +19,8 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 
-import com.shockwave.pdfium.PdfDocument;
-import com.shockwave.pdfium.PdfiumCore;
+import com.github.barteksc.pdfviewer.engine.EngineDocument;
+import com.github.barteksc.pdfviewer.engine.PdfEngine;
 
 import java.io.IOException;
 
@@ -33,8 +33,8 @@ public class UriSource implements DocumentSource {
     }
 
     @Override
-    public PdfDocument createDocument(Context context, PdfiumCore core, String password) throws IOException {
+    public EngineDocument createDocument(Context context, PdfEngine engine, String password) throws IOException {
         ParcelFileDescriptor pfd = context.getContentResolver().openFileDescriptor(uri, "r");
-        return core.newDocument(pfd, password);
+        return engine.openDocument(pfd, password);
     }
 }

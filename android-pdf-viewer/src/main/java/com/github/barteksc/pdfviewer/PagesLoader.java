@@ -20,7 +20,7 @@ import android.graphics.RectF;
 import com.github.barteksc.pdfviewer.util.Constants;
 import com.github.barteksc.pdfviewer.util.MathUtils;
 import com.github.barteksc.pdfviewer.util.Util;
-import com.shockwave.pdfium.util.SizeF;
+import com.github.barteksc.pdfviewer.engine.EngineSizeF;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -97,7 +97,7 @@ class PagesLoader {
     }
 
     private void getPageColsRows(GridSize grid, int pageIndex) {
-        SizeF size = pdfView.pdfFile.getPageSize(pageIndex);
+        EngineSizeF size = pdfView.pdfFile.getPageSize(pageIndex);
         float ratioX = 1f / size.getWidth();
         float ratioY = 1f / size.getHeight();
         final float partHeight = (Constants.PART_SIZE * ratioY) / pdfView.getZoom();
@@ -147,7 +147,7 @@ class PagesLoader {
                     pageLastYOffset = fixedLastYOffset;
                 } else {
                     float pageOffset = pdfView.pdfFile.getPageOffset(page, pdfView.getZoom());
-                    SizeF pageSize = pdfView.pdfFile.getScaledPageSize(page, pdfView.getZoom());
+                    EngineSizeF pageSize = pdfView.pdfFile.getScaledPageSize(page, pdfView.getZoom());
                     if (pdfView.isSwipeVertical()) {
                         pageLastXOffset = fixedLastXOffset;
                         pageLastYOffset = pageOffset + pageSize.getHeight();
@@ -172,7 +172,7 @@ class PagesLoader {
 
             } else {
                 float pageOffset = pdfView.pdfFile.getPageOffset(page, pdfView.getZoom());
-                SizeF pageSize = pdfView.pdfFile.getScaledPageSize(page, pdfView.getZoom());
+                EngineSizeF pageSize = pdfView.pdfFile.getScaledPageSize(page, pdfView.getZoom());
                 if (pdfView.isSwipeVertical()) {
                     pageFirstXOffset = fixedFirstXOffset;
                     pageFirstYOffset = pageOffset;
@@ -189,7 +189,7 @@ class PagesLoader {
             }
 
             getPageColsRows(range.gridSize, range.page); // get the page's grid size that rows and cols
-            SizeF scaledPageSize = pdfView.pdfFile.getScaledPageSize(range.page, pdfView.getZoom());
+            EngineSizeF scaledPageSize = pdfView.pdfFile.getScaledPageSize(range.page, pdfView.getZoom());
             float rowHeight = scaledPageSize.getHeight() / range.gridSize.rows;
             float colWidth = scaledPageSize.getWidth() / range.gridSize.cols;
 
@@ -297,7 +297,7 @@ class PagesLoader {
     }
 
     private void loadThumbnail(int page) {
-        SizeF pageSize = pdfView.pdfFile.getPageSize(page);
+        EngineSizeF pageSize = pdfView.pdfFile.getPageSize(page);
         float thumbnailWidth = pageSize.getWidth() * Constants.THUMBNAIL_RATIO;
         float thumbnailHeight = pageSize.getHeight() * Constants.THUMBNAIL_RATIO;
         if (!pdfView.cacheManager.containsThumbnail(page, thumbnailRect)) {

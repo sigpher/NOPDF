@@ -1,6 +1,6 @@
 package com.sigpher.nopdf.common.event;
 
-import com.shockwave.pdfium.PdfDocument;
+import com.github.barteksc.pdfviewer.engine.EngineBookmark;
 
 import java.util.List;
 
@@ -9,13 +9,13 @@ import java.util.List;
  */
 public class ContentEvent {
 
-    private List<PdfDocument.Bookmark> bookmarkList;
+    private List<EngineBookmark> bookmarkList;
 
-    public ContentEvent(List<PdfDocument.Bookmark> bookmarkList) {
+    public ContentEvent(List<EngineBookmark> bookmarkList) {
         this.bookmarkList = bookmarkList;
     }
 
-    public List<PdfDocument.Bookmark> getBookmarkList() {
+    public List<EngineBookmark> getBookmarkList() {
         return bookmarkList;
     }
 }

@@ -1,10 +1,10 @@
 package com.sigpher.nopdf.preview
 
-import com.shockwave.pdfium.PdfDocument
+import com.github.barteksc.pdfviewer.engine.EngineBookmark
 
 /**
  * @author Aaron aaronzzxup@gmail.com
  */
 interface IContentFragInterface {
-    fun update(collection: MutableCollection<PdfDocument.Bookmark>)
+    fun update(collection: MutableCollection<EngineBookmark>)
 }

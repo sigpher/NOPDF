@@ -9,7 +9,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.sigpher.nopdf.R
 import com.sigpher.nopdf.common.App
 import com.sigpher.nopdf.common.CommonFragment
-import com.shockwave.pdfium.PdfDocument
+import com.github.barteksc.pdfviewer.engine.EngineBookmark
 import kotlinx.android.synthetic.main.app_fragment_content.*
 import kotlinx.android.synthetic.main.app_recycler_item_emptyview.*
 import java.util.*
@@ -22,11 +22,11 @@ import java.util.*
  */
 class ContentFragment : CommonFragment(), IContentFragInterface {
 
-    private val contentList: MutableList<PdfDocument.Bookmark> = ArrayList()
+    private val contentList: MutableList<EngineBookmark> = ArrayList()
     private var tree: ContentTree? = null
     private var contentAdapter: ContentAdapter? = null
 
-    override fun update(collection: MutableCollection<PdfDocument.Bookmark>) {
+    override fun update(collection: MutableCollection<EngineBookmark>) {
         contentList.clear()
         contentList.addAll(collection)
         renderContent()
@@ -86,11 +86,11 @@ class ContentFragment : CommonFragment(), IContentFragInterface {
         adapter.submit(built.rows())
     }
 
-    private fun PdfDocument.Bookmark.toContentNode(): ContentNode {
+    private fun EngineBookmark.toContentNode(): ContentNode {
         return ContentNode(
                 title ?: "",
                 pageIdx.toInt(),
-                children?.map { it.toContentNode() } ?: emptyList()
+                children.map { it.toContentNode() }
         )
     }
 

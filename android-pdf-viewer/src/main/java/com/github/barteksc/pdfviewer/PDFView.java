@@ -66,10 +66,13 @@ import com.github.barteksc.pdfviewer.util.FitPolicy;
 import com.github.barteksc.pdfviewer.util.MathUtils;
 import com.github.barteksc.pdfviewer.util.SnapEdge;
 import com.github.barteksc.pdfviewer.util.Util;
-import com.shockwave.pdfium.PdfDocument;
-import com.shockwave.pdfium.PdfiumCore;
-import com.shockwave.pdfium.util.Size;
-import com.shockwave.pdfium.util.SizeF;
+import com.github.barteksc.pdfviewer.engine.EngineBookmark;
+import com.github.barteksc.pdfviewer.engine.EngineLink;
+import com.github.barteksc.pdfviewer.engine.EngineMeta;
+import com.github.barteksc.pdfviewer.engine.EngineSize;
+import com.github.barteksc.pdfviewer.engine.EngineSizeF;
+import com.github.barteksc.pdfviewer.engine.PdfEngine;
+import com.github.barteksc.pdfviewer.engine.PdfEngines;
 
 import java.io.File;
 import java.io.InputStream;
@@ -195,7 +198,7 @@ public class PDFView extends RelativeLayout {
     private boolean pageSnap = true;
 
     /** Pdfium core for loading and rendering PDFs */
-    private PdfiumCore pdfiumCore;
+    private PdfEngine engine;
 
     private ScrollHandle scrollHandle;
 
@@ -267,7 +270,7 @@ public class PDFView extends RelativeLayout {
         debugPaint = new Paint();
         debugPaint.setStyle(Style.STROKE);
 
-        pdfiumCore = new PdfiumCore(context);
+        engine = PdfEngines.create(context);
         setWillNotDraw(false);
     }
 
@@ -283,7 +286,7 @@ public class PDFView extends RelativeLayout {
 
         recycled = false;
         // Start decoding document
-        decodingAsyncTask = new DecodingAsyncTask(docSource, password, userPages, this, pdfiumCore);
+        decodingAsyncTask = new DecodingAsyncTask(docSource, password, userPages, this, engine);
         decodingAsyncTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
@@ -509,7 +512,7 @@ public class PDFView extends RelativeLayout {
         }
 
         animationManager.stopAll();
-        pdfFile.recalculatePageSizes(new Size(w, h));
+        pdfFile.recalculatePageSizes(new EngineSize(w, h));
 
         if (swipeVertical) {
             currentXOffset = -relativeCenterPointInStripXOffset * pdfFile.getMaxPageWidth() + w * 0.5f;
@@ -663,7 +666,7 @@ public class PDFView extends RelativeLayout {
             }
 
             canvas.translate(translateX, translateY);
-            SizeF size = pdfFile.getPageSize(page);
+            EngineSizeF size = pdfFile.getPageSize(page);
             listener.onLayerDrawn(canvas,
                     toCurrentScale(size.getWidth()),
                     toCurrentScale(size.getHeight()),
@@ -686,7 +689,7 @@ public class PDFView extends RelativeLayout {
         // Move to the target page
         float localTranslationX = 0;
         float localTranslationY = 0;
-        SizeF size = pdfFile.getPageSize(part.getPage());
+        EngineSizeF size = pdfFile.getPageSize(part.getPage());
 //        size = new SizeF(size.getWidth(), size.getHeight());
 
         if (swipeVertical) {
@@ -1086,9 +1089,9 @@ public class PDFView extends RelativeLayout {
         jumpTo(page);
     }
 
-    public SizeF getPageSize(int pageIndex) {
+    public EngineSizeF getPageSize(int pageIndex) {
         if (pdfFile == null) {
-            return new SizeF(0, 0);
+            return new EngineSizeF(0, 0);
         }
         return pdfFile.getPageSize(pageIndex);
     }
@@ -1276,7 +1279,7 @@ public class PDFView extends RelativeLayout {
     }
 
     /** Returns null if document is not loaded */
-    public PdfDocument.Meta getDocumentMeta() {
+    public EngineMeta getDocumentMeta() {
         if (pdfFile == null) {
             return null;
         }
@@ -1284,7 +1287,7 @@ public class PDFView extends RelativeLayout {
     }
 
     /** Will be empty until document is loaded */
-    public List<PdfDocument.Bookmark> getTableOfContents() {
+    public List<EngineBookmark> getTableOfContents() {
         if (pdfFile == null) {
             return Collections.emptyList();
         }
@@ -1292,7 +1295,7 @@ public class PDFView extends RelativeLayout {
     }
 
     /** Will be empty until document is loaded */
-    public List<PdfDocument.Link> getLinks(int page) {
+    public List<EngineLink> getLinks(int page) {
         if (pdfFile == null) {
             return Collections.emptyList();
         }
