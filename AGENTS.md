@@ -38,7 +38,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   记账逻辑抽成 `onPdfLoaded()` 供两条路径共用，延后打开需重跑 `initScaleFactor()`。
 - **`armeabi`(ARMv5) 已从 `abiFilters` 移除**：该 ABI 早已废弃，minSdk 21 设备不再搭载，
   约省 0.67MB。
-- **包体现状（0.2.0 release APK 9,116,037 B ≈ 8.7MB）**：native 库占 6,089,499 B（**67%**，
+- **包体现状（0.2.1 release APK 9,116,313 B ≈ 8.7MB）**：native 库占 6,089,499 B（**67%**，
   其中 pdfium 约 4.75MB、要同时带 `arm64-v8a` 与 `armeabi-v7a`），`classes.dex` 1,644,535 B，
   `res/` 552,678 B，`resources.arsc` 394,260 B，`assets/` 已完全为空。
   **进一步压缩的最大杠杆是按 ABI 分包**（每包可再省约 2.9MB），其次是 PNG 调色板化
