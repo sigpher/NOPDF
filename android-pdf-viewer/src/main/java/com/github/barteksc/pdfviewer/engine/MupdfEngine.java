@@ -41,14 +41,42 @@ class MupdfEngine implements PdfEngine {
      *
      * <p>Entries are released by {@link #closeDocument}. Nothing here evicts on its own — the
      * bound on how many pages are resident comes from the caller, which only opens the pages
-     * it intends to keep around.
+     * it intends to keep around. (Measuring a page is the exception: {@link #getPageSize}
+     * must not add to this map, or setting up a document would load every page in it.)
+     *
+     * <p>All access to {@code pages} is guarded by the instance monitor. Unlike pdfium, whose
+     * per-page state lived behind native handles, this map is plain Java shared between the
+     * renderer thread (which opens and renders pages) and the main thread (which measures
+     * pages and maps hit rectangles for link handling), and {@code SparseArray} is not
+     * thread-safe. The monitor is only ever held while the map is read or written, never
+     * across an actual render, so rendering pages does not serialise on it.
      */
     private static final class MuDoc {
         final Document document;
-        final SparseArray<Page> pages = new SparseArray<>();
+        private final SparseArray<Page> pages = new SparseArray<>();
 
         MuDoc(Document document) {
             this.document = document;
+        }
+
+        synchronized Page page(int pageIndex) {
+            Page page = pages.get(pageIndex);
+            if (page == null) {
+                page = document.loadPage(pageIndex);
+                pages.put(pageIndex, page);
+            }
+            return page;
+        }
+
+        synchronized Page cachedPage(int pageIndex) {
+            return pages.get(pageIndex);
+        }
+
+        synchronized void destroyPages() {
+            for (int i = 0; i < pages.size(); i++) {
+                pages.valueAt(i).destroy();
+            }
+            pages.clear();
         }
     }
 
@@ -136,10 +164,7 @@ class MupdfEngine implements PdfEngine {
     @Override
     public void closeDocument(EngineDocument handle) {
         MuDoc muDoc = muDoc(handle);
-        for (int i = 0; i < muDoc.pages.size(); i++) {
-            muDoc.pages.valueAt(i).destroy();
-        }
-        muDoc.pages.clear();
+        muDoc.destroyPages();
         muDoc.document.destroy();
     }
 
@@ -150,10 +175,32 @@ class MupdfEngine implements PdfEngine {
 
     /**
      * Uses the crop box, matching what pdfium's {@code getPageSize} reports.
+     *
+     * <p>Deliberately does <em>not</em> go through {@link #page}: the viewer asks for the
+     * size of <em>every</em> page while setting a document up ({@code PdfFile.setup}), so
+     * caching here would make opening an N-page document retain N resident MuPDF pages.
+     * pdfium answered this from an index-based native call that opened nothing; MuPDF has
+     * no such entry point, so the page is loaded, measured, and released again. Pages
+     * that are already resident (because they are open for rendering) are measured
+     * through the cache instead.
      */
     @Override
     public EngineSize getPageSize(EngineDocument handle, int pageIndex) {
-        com.artifex.mupdf.fitz.Rect bounds = page(handle, pageIndex).getBounds();
+        MuDoc muDoc = muDoc(handle);
+        Page resident = muDoc.cachedPage(pageIndex);
+        if (resident != null) {
+            return boundsSize(resident);
+        }
+        Page page = muDoc.document.loadPage(pageIndex);
+        try {
+            return boundsSize(page);
+        } finally {
+            page.destroy();
+        }
+    }
+
+    private static EngineSize boundsSize(Page page) {
+        com.artifex.mupdf.fitz.Rect bounds = page.getBounds();
         return new EngineSize(Math.round(bounds.x1 - bounds.x0), Math.round(bounds.y1 - bounds.y0));
     }
 
@@ -324,13 +371,7 @@ class MupdfEngine implements PdfEngine {
     }
 
     private Page page(EngineDocument handle, int pageIndex) {
-        MuDoc muDoc = muDoc(handle);
-        Page page = muDoc.pages.get(pageIndex);
-        if (page == null) {
-            page = muDoc.document.loadPage(pageIndex);
-            muDoc.pages.put(pageIndex, page);
-        }
-        return page;
+        return muDoc(handle).page(pageIndex);
     }
 
     private MuDoc muDoc(EngineDocument handle) {

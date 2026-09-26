@@ -38,7 +38,9 @@
 -dontwarn com.uber.autodispose.**
 
 # AndroidPdfViewer
--keep class com.shockwave.**
+# 原先这里有 -keep class com.shockwave.**（pdfium 的 JNI 绑定）。换 MuPDF 后 pdfium
+# 已彻底移除，规则作废；等价的规则移到 android-pdf-viewer/consumer-proguard-rules.pro，
+# 由提供绑定类的模块自己声明。
 
 # RealtimeBlurView
 -keep class android.support.v8.renderscript.** { *; }

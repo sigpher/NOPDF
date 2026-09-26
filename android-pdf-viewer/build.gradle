@@ -77,6 +77,12 @@ android {
         targetSdkVersion 29
         versionCode 1
         versionName "3.2.0-beta.1"
+
+        // libmupdf_java.so 用硬编码的类名/方法名/签名做 JNI 查找，绑定类一旦被 R8 改名
+        // 或删掉就是运行时 UnsatisfiedLinkError / NoSuchMethodError。规则必须由**提供这
+        // 些类的模块**声明，消费方（app）的 proguard-rules.pro 影响不到它们。
+        // 详见 consumer-proguard-rules.pro 里的说明。
+        consumerProguardFiles 'consumer-proguard-rules.pro'
     }
 
     sourceSets {

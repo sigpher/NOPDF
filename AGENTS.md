@@ -59,6 +59,15 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
    `document.resolveLinkDestination(outline)` 拿到 `LinkDestination`（它继承 `Location`，
    有 `chapter`/`page`），再按 `chapter` 累加 `countPages(c)` 换算成扁平页号。解析不出来的
    记为 0（保留节点而非丢弃）。MuPDF 直接给树，app 侧 `ContentTree` 继续消费即可。
+5. **页尺寸不进缓存**：`PdfFile.setup()` 会遍历**每一页**调 `getPageSize`。pdfium 那边的
+   `nativeGetPageSizeByIndex` 是按索引取、不打开任何页；MuPDF 没有等价入口，只能
+   `loadPage` → 量 → `destroy()`。若图省事走缓存（`page()`），打开 N 页文档就会常驻 N 个
+   MuPDF `Page`，在 `largeHeap` + 30MB part 缓存之外又是一笔常驻内存。故 `getPageSize`
+   只在页面**已因渲染而驻留**时才读缓存，否则量完立刻释放。
+6. **`MuDoc.pages` 有锁**：`SparseArray` 非线程安全，而这张表同时被渲染线程
+   （`RenderingHandler` 开页/渲染）与主线程（`getPageSize`、`mapRectToDevice` 命中链接）访问。
+   `MuDoc` 的方法都 `synchronized`，但**只在读写表时持锁，绝不跨 `page.run()` 持锁**，
+   否则渲染会被测量串行化。
 
 `MupdfEngine` 另有两处适配：`ParcelFileDescriptor` 需包成 `SeekableInputStream`（MuPDF 无 fd
 入口；自带 `FitzInputStream` 构造器是 private，用不了，自实现那 3 个方法，且避免整份 PDF 读进
@@ -85,25 +94,73 @@ NDK r27 **不再带 `platforms/` 目录**，AGP 3.4.1 的 NDK 集成无法识别
 
 ### 许可：AGPL-3.0
 
-MuPDF 是 AGPL-3.0，且官方未发布 Android 预编译产物，本项目自行编译并随应用分发，
-因此仓库 `LICENSE` 已从 Apache-2.0 改为 AGPL-3.0。**AGPL 第 13 条（网络使用）不适用**
-（本应用不提供网络服务），但**分发即构成「携带」，必须提供完整对应源码**——发布时别忘了。
+MuPDF 是 AGPL-3.0，本项目自行编译并随应用分发，因此仓库 `LICENSE` 已从 Apache-2.0 改为
+AGPL-3.0。**AGPL 第 13 条（网络使用）不适用**（本应用不提供网络服务），但**分发即构成
+「携带」，必须提供完整对应源码**——发布时别忘了。
+
+官方其实**有**发布 Android 预编译产物：`maven.ghostscript.com` 上的
+`com.artifex.mupdf:fitz`（以及 `:viewer` / `:mini`），版本 1.11.0 – 1.28.5，AGPL-3.0。
+已核实 `fitz:1.28.5` 的 AAR 对本项目**完全可用**：`minCompileSdk=1`、
+`minAndroidGradlePluginVersion=1.0.0`（都没有抬高要求）、class 文件版本 52（Java 8）、
+`minSdkVersion 21`、4 个 ABI、内含 87 个绑定类，POM 无任何传递依赖。
+也就是说它本来可以直接用，**不需要 NDK、不需要在本地编 18MB 产物、
+`local.properties` 里也不必写 `mupdf.dir` / `ndk.dir`**。本项目目前仍走自行 `ndk-build`，
+理由只剩「能通过 `MUPDF_EXTRA_CFLAGS` 裁掉 mujs / cmarkgfm / openjpeg 等组件」（见「包体」）。
+若要改回预编译产物：根 `build.gradle` 加 `maven { url 'https://maven.ghostscript.com' }`，
+`android-pdf-viewer` 去掉 `java.srcDirs` / `jniLibs.srcDirs` 与那段校验、换成
+`api 'com.artifex.mupdf:fitz:1.28.5'`，删掉 `tools/build_mupdf.sh`。
+**下面的 R8 规则与 `-keep` 的必要性不会因此改变**（JNI 名字仍会被改名/删除）。
+
+### R8：JNI 绑定必须整包 keep（release 曾整个不可用）
+
+`libmupdf_java.so` 用**硬编码的类名/方法名/签名**做 JNI 查找
+（`FindClass("com/artifex/mupdf/fitz/Document")`、`GetMethodID(..., "loadPage", ...)`）。
+R8 只要改名或删掉其中任何一个，运行时就是 `UnsatisfiedLinkError` / `NoSuchMethodError`。
+
+**开发期实测：没有 keep 规则时 release APK 是彻底坏的，而 debug 完全正常**——所以
+「debug 能跑」根本不能证明 release 能跑。`assembleRelease` 照样 BUILD SUCCESSFUL。
+`classes.dex` 里 `Document` 只剩 `<clinit>` + `openNativeWithStream`，
+`loadPage` / `countPages` / `needsPassword` / `authenticatePassword` / `loadOutline` /
+`getMetaData` / `resolveLinkDestination` 全部消失；`Matrix` 被改名成 `c.c.a.a.a`、
+`SeekableInputStream` 被改名成 `c.c.a.a.b`。
+
+原因是 AGP 内置的 `proguard-android-optimize.txt` 只带一条
+`-keepclasseswithmembernames class * { native <methods>; }`，它有两个洞：
+**没有 `includedescriptorclasses`**（只出现在 native 方法签名里的类照样被改名），
+且**只保名字不保存在**（方法可以直接被删掉）。换 pdfium 时仓库里那条
+`-keep class com.shockwave.**` 正是为此，迁到 MuPDF 后若不补回来就会重蹈覆辙。
+
+现由 `android-pdf-viewer/consumer-proguard-rules.pro` 声明
+（`-keep class com.artifex.mupdf.fitz.** { *; }`），在 `defaultConfig` 里用
+`consumerProguardFiles` 挂上——**必须由提供绑定类的模块声明**，写进
+`app/proguard-rules.pro` 影响不到它们。代价约 +38 KB/包。修好后 87 个绑定类全部保留、
+无一改名。
+
+**改动 `android-pdf-viewer` 的依赖、sourceSets 或混淆配置后，务必重新核对 release dex：**
+
+```sh
+sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字还在 dex 里
+```
+
+现有的 16 个测试**检测不到**这一类问题（`ContentTree` 刻意不依赖引擎类型），
+所以这个检查是唯一能挡住它的自动化关卡。
 
 ### 包体
 
 | ABI | pdfium（旧） | MuPDF（新） | 增量 |
 | --- | --- | --- | --- |
-| `arm64-v8a` | 6,142,542 B | 8,517,261 B | +2,374,719 B（+38.7%） |
-| `armeabi-v7a` | 6,003,851 B | 7,660,782 B | +1,656,931 B（+27.6%） |
+| `arm64-v8a` | 6,142,542 B | 8,556,364 B | +2,413,822 B（+39.3%） |
+| `armeabi-v7a` | 6,003,851 B | 7,699,923 B | +1,696,072 B（+28.2%） |
 
-压缩后 `lib/`：arm64 5,492,229 B / v7a 4,635,758 B。MuPDF 的 `.so` 压缩比约 0.51，
-比 pdfium 的 0.44 略差（CJK 字体数据本身不易压缩）。
+（含 JNI keep 规则，比不 keep 时各多约 38 KB。）压缩后 `lib/`：arm64 5,492,229 B /
+v7a 4,635,758 B。MuPDF 的 `.so` 压缩比约 0.51，比 pdfium 的 0.44 略差（CJK 字体数据
+本身不易压缩）。
 
 仍有回收空间：MuPDF 默认打包了 mujs（JS 引擎）、extract、cmarkgfm（markdown）、
 openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CFLAGS` 关掉。
 
-**换引擎未经真机渲染验证**。且现有 16 个测试**检测不到渲染回归**——`ContentTree` 刻意不依赖
-引擎类型。升级前请手动核对渲染效果。
+**换引擎未经真机渲染验证**（本机无 emulator / system-image / 真机，只做到了 dex 级校验）。
+升级前请手动核对渲染效果。
 
 ## 性能与稳定性（已修 / 仍存在）
 

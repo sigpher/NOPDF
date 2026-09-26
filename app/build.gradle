@@ -31,9 +31,9 @@ android {
         resConfigs 'en', 'zh-rCN', 'zh-rHK', 'zh-rMO', 'zh-rSG', 'zh-rTW'
     }
 
-    // 按 ABI 拆包：每个 APK 只带一个 ABI 的 native 库。native 库（主要是 pdfium 的
-    // libmodpdfium.so / libjniPdfium.so）两份加起来约占包体 67%，是最大的单项；拆开后每个包
-    // 只保留自己那一份，单包可再省下约 2.9MB。
+    // 按 ABI 拆包：每个 APK 只带一个 ABI 的 native 库。native 库（MuPDF 的
+    // libmupdf_java.so）压缩后约占包体 60%，是最大的单项；拆开后每个包
+    // 只保留自己那一份，单包可省下约 0.8MB（arm64）。
     //
     // 原先是用 defaultConfig.ndk.abiFilters 做过滤——那只决定"哪些 ABI 进包"，两个 ABI 仍然
     // 打进同一个 APK。这里改用 splits.abi 真正按 ABI 输出多个 APK，并把 universalApk 关掉
