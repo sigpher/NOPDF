@@ -1093,29 +1093,6 @@ public class PDFView extends RelativeLayout {
         return pdfFile.getPageSize(pageIndex);
     }
 
-    /**
-     * 本地新增：返回指定页在文档条带中的原点（视图像素，已含当前缩放）。
-     *
-     * <p>页面原点的横纵轴语义依赖滚动方向：竖向滚动时主轴是 Y、另一轴取居中偏移，
-     * 横向滚动时主轴是 X。{@code pdfFile} 与 {@code PdfFile.isVertical} 分别为包内与私有可见，
-     * 调用方无法自行换算，故在此处一并封装。
-     * 供选词查词把触点由视图像素换算到 PDF 页面坐标使用。
-     *
-     * @return 文档尚未加载时返回 {@code null}
-     */
-    public PointF getPageOriginOnCanvas(int pageIndex) {
-        if (pdfFile == null) {
-            return null;
-        }
-        float zoom = getZoom();
-        float primary = pdfFile.getPageOffset(pageIndex, zoom);
-        float secondary = pdfFile.getSecondaryPageOffset(pageIndex, zoom);
-        // PdfFile.isVertical 由构造时传入的 pdfView.isSwipeVertical() 决定，此处保持同一语义。
-        return isSwipeVertical()
-                ? new PointF(secondary, primary)
-                : new PointF(primary, secondary);
-    }
-
     public int getCurrentPage() {
         return currentPage;
     }

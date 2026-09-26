@@ -13,7 +13,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.view.*
 import android.view.animation.LinearInterpolator
 import android.widget.SeekBar
@@ -24,13 +23,11 @@ import androidx.fragment.app.FragmentPagerAdapter
 import androidx.lifecycle.MutableLiveData
 import com.aaron.base.impl.OnClickListenerImpl
 import com.aaron.base.impl.TextWatcherImpl
-import com.sigpher.nopdf.BuildConfig
 import com.sigpher.nopdf.R
 import com.sigpher.nopdf.common.*
 import com.sigpher.nopdf.common.bean.PDF
 import com.sigpher.nopdf.common.event.RecentPDFEvent
 import com.sigpher.nopdf.common.utils.AboutUtils
-import com.sigpher.nopdf.common.utils.DictionaryLauncher
 import com.sigpher.nopdf.common.utils.NotchUtils
 import com.sigpher.nopdf.common.utils.PdfUtils
 import com.sigpher.nopdf.settings.SettingsActivity.Companion.start
@@ -47,7 +44,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -1064,8 +1060,9 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         if (password != null) {
             configurator = configurator.password(password)
         }
-        // 选词查词需要长按，这里不能再 disableLongpress()。
+        // 没有长按的消费者，关掉 GestureDetector 的长按识别。
         configurator
+                .disableLongpress()
                 .swipeHorizontal(Settings.swipeHorizontal)
                 .nightMode(isNightMode.value == true)
                 .pageFling(Settings.swipeHorizontal)
@@ -1108,134 +1105,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                     if (judgeAutoScrollPause()) return@onTap true
                     judgeFlipPage(event)
                 }
-                .onLongPress { event: MotionEvent ->
-                    // 诊断：确认 GestureDetector 是否真的把长按回调送到了这里。
-                    // 用 android.util.Log 而非 LogUtils，保证 release 也能在 logcat 看到。
-                    Log.e(TAG_LOOKUP, "onLongPress fired at (${event.x}, ${event.y})")
-                    if (BuildConfig.DEBUG) {
-                        UiManager.showCenterShort("① 长按已触发")
-                    }
-                    lookupWordAt(event.x, event.y)
-                }
                 .load()
-    }
-
-    /**
-     * 长按选词查词：把按下的位置换算成 PDF 页面坐标，取出该处的英文单词，
-     * 再交给已安装的海词词典 App，或回落到系统浏览器打开 dict.cn 查询页。
-     *
-     * 说明：
-     * 1. 原先这里调用了 disableLongpress()，因为没有长按的消费者；选词需要长按，故已移除。
-     *    该开关只影响 GestureDetector 的长按识别，而 DragPinchManager.onLongPress 仅把事件
-     *    转发给 callbacks，不参与滚动、缩放与翻页，因此打开不会影响既有手势。
-     * 2. 取词依赖 PDFBox 重新解析该页（pdfium 1.9.0 没有文本 API），耗时，必须放到后台线程。
-     * 3. 扫描版 PDF 没有文本层，会取不到词，只提示不崩溃。
-     */
-    private fun lookupWordAt(viewX: Float, viewY: Float) {
-        // 诊断：用 android.util.Log 而非 LogUtils，保证 release 也能在 logcat 里看到。
-        Log.e(TAG_LOOKUP, "lookup: entered view=($viewX, $viewY)")
-        val path = pdf?.path
-        if (path.isNullOrEmpty()) {
-            Log.e(TAG_LOOKUP, "lookup: no pdf path, abort")
-            showLookupToast(getString(R.string.app_lookup_no_word))
-            return
-        }
-        val page = app_pdfview.currentPage
-        val origin = app_pdfview.getPageOriginOnCanvas(page)
-        if (origin == null) {
-            Log.e(TAG_LOOKUP, "lookup: document not loaded yet, abort")
-            showLookupToast(getString(R.string.app_lookup_no_word))
-            return
-        }
-        val transform = PageTransform(
-                zoom = app_pdfview.zoom,
-                currentXOffset = app_pdfview.currentXOffset,
-                currentYOffset = app_pdfview.currentYOffset,
-                pageOffsetX = origin.x,
-                pageOffsetY = origin.y
-        )
-        val pageX = transform.toPageX(viewX)
-        val pageY = transform.toPageY(viewY)
-        val tolerance = transform.viewToPageLength(WordPicker.TAP_TOLERANCE_PX)
-        val appContext = applicationContext
-        val pwd = password
-        Log.e(TAG_LOOKUP, "lookup: page=$page view=($viewX,$viewY) page=($pageX,$pageY) zoom=${transform.zoom} tol=$tolerance")
-        launch {
-            try {
-                // PDFBox 要重新解析整份 PDF，大文件可能很慢；加超时兜底，
-                // 否则用户只会看到「按了没反应」。
-                val words = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
-                    withContext(Dispatchers.IO) {
-                        val chars = PdfPageTextExtractor.get()
-                                .pageChars(appContext, path, page, pwd)
-                        WordPicker.words(chars)
-                    }
-                }
-                if (!isActive) {
-                    return@launch
-                }
-                if (words == null) {
-                    Log.e(TAG_LOOKUP, "lookup: parse timeout after ${LOOKUP_TIMEOUT_MS}ms")
-                    showLookupToast(getString(R.string.app_lookup_timeout))
-                    return@launch
-                }
-                Log.e(TAG_LOOKUP, "lookup: parsed ${words.size} words on page $page")
-                if (BuildConfig.DEBUG) {
-                    UiManager.showCenterShort("② 解析到 ${words.size} 个词")
-                }
-                val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
-                val target = word?.text?.let { WordPicker.normalize(it) }
-                if (target.isNullOrEmpty() || !WordPicker.isTranslatable(target)) {
-                    Log.e(TAG_LOOKUP, "lookup: no translatable word at ($pageX,$pageY), hit=${word?.text}")
-                    showLookupToast(getString(R.string.app_lookup_no_word))
-                    return@launch
-                }
-                showWordLookupDialog(target)
-            } catch (t: Throwable) {
-                // 不能吞掉取消异常，否则会破坏协程的取消语义。
-                if (t is kotlinx.coroutines.CancellationException) {
-                    throw t
-                }
-                // 兜底很重要：本 scope 是普通 Job（非 SupervisorJob），协程体一旦抛异常
-                // 会取消父 Job，之后所有 launch 都会静默失效（表现为「长按毫无反应」）。
-                Log.e(TAG_LOOKUP, "lookup: failed", t)
-                showLookupToast(if (BuildConfig.DEBUG) {
-                    "取词异常：$t"
-                } else {
-                    getString(R.string.app_lookup_no_word)
-                })
-            }
-        }
-    }
-
-    /**
-     * 选词查词的提示。统一走 [UiManager]（内部是系统 Toast）；不再直接依赖 utilcode 的
-     * ToastUtils——它在通知被关闭时会退化成 TYPE_TOAST 自绘窗口，Android 11+ 下完全不可见。
-     */
-    private fun showLookupToast(message: CharSequence) {
-        UiManager.showCenterShort(message)
-    }
-
-    /**
-     * 弹出查词选择框：优先用海词词典 App，其次用浏览器打开 dict.cn。
-     */
-    private fun showWordLookupDialog(word: String) {
-        android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.app_word_lookup_title)
-                .setMessage(word)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setNeutralButton(R.string.app_lookup_in_browser) { _, _ ->
-                    if (!DictionaryLauncher.launchWeb(this, word)) {
-                        UiManager.showCenterShort(R.string.app_lookup_no_target)
-                    }
-                }
-                .setPositiveButton(R.string.app_lookup_in_dict_app) { _, _ ->
-                    if (!DictionaryLauncher.launchDictionaryApp(this, word)
-                            && !DictionaryLauncher.launchWeb(this, word)) {
-                        UiManager.showCenterShort(R.string.app_lookup_no_target)
-                    }
-                }
-                .show()
     }
 
     private fun initBgSize() {
@@ -1565,8 +1435,6 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         private const val OFFSET_Y = -0.5f // 自动滚动的偏离值
         private const val ANIM_DURATION = 250L
         private const val SCALE_VIEW_ITEM_ANIM_DURATION = 150L
-        private const val TAG_LOOKUP = "PdfLookup"
-        private const val LOOKUP_TIMEOUT_MS = 8000L
         private val SCALE_VIEW_ITEM_TRANS_VALUE = ConvertUtils.dp2px(12f).toFloat()
         /**
          * 非外部文件打开

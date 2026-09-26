@@ -79,34 +79,6 @@ android {
         }
     }
 
-    packagingOptions {
-        // BouncyCastle 的后量子密码（Picnic / SIKE）参数表约 7.8MB，PDFBox 解密普通 PDF
-        // 只用到标准 AES/RC4，完全用不到这些表。它们是通过字符串按名加载的资源，
-        // shrinkResources 无法判定为无用，因此只能在这里显式排除。
-        // 注意：packagingOptions.exclude 只作用于 JAR/Java 资源，**管不到 AAR 的 assets**；
-        // fontbox 的 CMap 排除见下方 aaptOptions.ignoreAssetsPattern。
-        exclude 'org/bouncycastle/pqc/**'
-    }
-
-    aaptOptions {
-        // 打包 assets 时忽略的文件/目录（`!` 前缀表示忽略）。默认规则必须一并写出，
-        // 因为这里是整体替换而非追加。
-        //
-        // 追加部分为 PDFBox/fontbox 的各 CJK 编码 CMap 表（压缩后约 1.15MB）。本项目引入
-        // PDFBox 只为「英文选词查词」这唯一用途（PreviewActivity -> PdfPageTextExtractor），
-        // 正文提取由 PDFTextStripper 按字体编码完成：拉丁文（WinAnsi/标准编码）与
-        // Type0(Identity) 字体都不需要这些表，而非拉丁 PDF 取出的字也会被英文判定拒绝，
-        // 因此排除后功能不受影响。Identity-H / Identity-V 及极小的 H / V（合计约 4KB）予以保留。
-        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~' +
-                ':!UniGB-*:!UniCNS-*:!UniJIS-*:!UniKS-*' +
-                ':!Adobe-GB1-*:!Adobe-CNS1-*:!Adobe-Japan1-*:!Adobe-Japan2-*:!Adobe-Korea1-*' +
-                ':!GBK*:!GB-EUC-*:!GBpc-EUC-*' +
-                ':!CNS-EUC-*:!ETen-B5-*:!ETenms-B5-*:!HKscs-B5-*:!B5pc-*' +
-                ':!KSC-EUC-*:!KSCpc-EUC-*:!KSCms-UHC-*' +
-                ':!90ms-RKSJ-*:!90msp-RKSJ-*:!90pv-RKSJ-*:!83pv-RKSJ-*:!Add-RKSJ-*:!Ext-RKSJ-*' +
-                ':!EUC-*'
-    }
-
     compileOptions {
         sourceCompatibility = 1.8
         targetCompatibility = 1.8
@@ -144,12 +116,6 @@ dependencies {
         exclude group: 'io.reactivex.rxjava2'
         exclude group: 'com.uber.autodispose'
     }
-    // 选词查词：pdfium-android 1.9.0 没有暴露任何文本 API（无 TextPage / FPDFText 绑定），
-    // 因此用 PDFBox 提取带坐标的字符框。整棵依赖树均为 Java 5~7 字节码（PDFBox 51、
-    // BouncyCastle 49），AGP 3.4.1 的 D8/Jetifier 均可处理。
-    // 代价：与 pdfium 重复解析同一份 PDF，且包体增加（release 经 R8 收缩后仅保留加密相关部分）。
-    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
-
     implementation 'org.greenrobot:greendao:3.2.2'
     implementation 'com.github.anzewei:parallaxbacklayout:1.1.9'
     implementation 'com.github.mmin18:realtimeblurview:1.2.1'

@@ -7,7 +7,7 @@
 NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并导入手机上的 PDF 文件，按文件夹或自定义方式分组管理书架，支持竖屏/横屏、"点击翻页、音量键翻页、自动滚动"等多种阅读方式，并内置书签、目录、进度记忆、全文搜索、备份恢复等实用功能。
 
 - 包名：`com.sigpher.nopdf`
-- 当前版本：0.1.3（versionCode 4）
+- 当前版本：0.2.0（versionCode 12）
 - 支持系统：Android 5.0（API 21）及以上（targetSdk 28）
 - 支持语言：英文、简体中文、繁体中文
 
@@ -78,7 +78,7 @@ NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并�
 
 ## 构建
 
-> 注意：项目工具链较老且已冻结（Gradle 5.4.1 / AGP 3.4.1 / Kotlin 1.3.61 / Java 8 / compileSdk 29）。项目原本依赖的 `jcenter()`、`dl.bintray.com` 等仓库均已关停，根 `build.gradle` 中已补入 `mavenCentral()`、阿里云 public 镜像与 `plugins.gradle.org/m2` 作为替代源，依赖可正常解析。
+> 注意：项目工具链较老且已冻结（Gradle 5.4.1 / AGP 3.4.1 / Kotlin 1.3.61 / Java 8 / compileSdk 29）。项目原本依赖的 `jcenter()`、`dl.bintray.com` 等仓库均已关停，根 `build.gradle` 中已补入 `mavenCentral()` 与阿里云 public 镜像作为替代源，依赖可正常解析。
 
 ### 环境要求
 
@@ -118,7 +118,7 @@ KEY_PASSWORD=<密钥密码>
 
 - Debug 变体通过 manifest 占位符切换图标/名称；两个变体都使用 release 签名配置
 - 桌面图标为自适应图标（`mipmap-anydpi-v26/*.xml` + 各密度前景与 legacy 位图）；更换图标只需替换根目录 `NoPDF.png`，再执行 `python tools/gen_icons.py` 重新生成（Dev 角标素材见 `tools/dev_badge.png`）
-- 打包 APK 仅包含 ARM ABI 的 Native 库（`armeabi` / `armeabi-v7a` / `arm64-v8a`）
+- 打包 APK 仅包含 ARM ABI 的 Native 库（`armeabi-v7a` / `arm64-v8a`；`armeabi` 已移除）
 - App 内所有资源必须使用 `app_` 前缀（`resourcePrefix 'app'`）
 - 数据库升级为非破坏式迁移（`UpdateOpenHelper` + `MigrationHelper`），修改数据库结构需同时更新 `greendao { schemaVersion }` 与迁移监听列表
 
@@ -142,10 +142,12 @@ KEY_PASSWORD=<密钥密码>
 ## 已知限制
 
 - `targetSdk` 仍为 28：未适配 Android 10+ 的分区存储，也未处理 Android 12+ 对 `android:exported` 的强制要求
-- 视图绑定仍使用已废弃的 `kotlinx.android.synthetic`（约 30 处）
-- `preview/PreviewActivity.kt` 体量较大（约 1800 行），混合了渲染、手势、书签、目录与导出等职责
+- 视图绑定仍使用已废弃的 `kotlinx.android.synthetic`（20 个文件）
+- `preview/PreviewActivity.kt` 体量较大（约 1447 行），混合了渲染、手势、书签、目录与导出等职责
 - 无深色模式（固定使用 `Theme.AppCompat.Light`）
-- 单元测试覆盖有限：数据库迁移、备份/还原等高风险逻辑尚无自动化回归
+- 单元测试覆盖有限：仅目录树展开/折叠有回归测试；数据库迁移、备份/还原等高风险逻辑尚无自动化回归
+- **0.2.0 起移除了「选词查词」（长按英文单词查词典）功能**，同时移除了 PDFBox 及其传递依赖 BouncyCastle 以缩减包体。若需要该功能，请在 issue 中反馈
+- 受 pdfium 1.9.0 的 Java 层没有文本 API 所限，本应用不提供取字类能力（选词、复制、全文搜索）
 
 ## 贡献与反馈
 

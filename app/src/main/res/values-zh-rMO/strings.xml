@@ -135,12 +135,6 @@
         <item>不限</item>
     </string-array>
     <string name="app_hide_scroll_level_bar">隱藏滾動調節</string>
-    <string name="app_word_lookup_title">查詞</string>
-    <string name="app_lookup_in_browser">瀏覽器查詞</string>
-    <string name="app_lookup_in_dict_app">海詞詞典</string>
-    <string name="app_lookup_no_word">此處沒有英文單詞</string>
-    <string name="app_lookup_timeout">讀取該頁超時，請重試</string>
-    <string name="app_lookup_no_target">沒有可用於查詞的應用</string>
 
     <string name="app_backup_item_count_preview">共 16 本</string>
     <string name="app_cd_back">返回</string>

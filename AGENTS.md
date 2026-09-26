@@ -10,52 +10,19 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   - `./gradlew :app:assembleDebug` — primary build check
   - `./gradlew :app:assembleRelease` — `minifyEnabled` + `shrinkResources`
   - `./gradlew :app:testDebugUnitTest` — JVM unit tests
-  - one class: `./gradlew :app:testDebugUnitTest --tests "com.sigpher.nopdf.preview.ContentTreeTest"` (or `…preview.WordPickerTest`)
+  - one class: `./gradlew :app:testDebugUnitTest --tests "com.sigpher.nopdf.preview.ContentTreeTest"`
 - `jcenter()` / `dl.bintray.com` are still listed in the root `build.gradle` but are dead. `mavenCentral()` + `maven.aliyun.com/repository/public` mirrors are present in both `buildscript` and `allprojects`, so deps (incl. Umeng) do resolve. README also claims a `plugins.gradle.org/m2` mirror — it is **not** in any build file. Trust the build files over the README.
 - Release mapping lands in `app/build/outputs/mapping/release/mapping.txt` (AGP writes it from the `-verbose` flag). Do **not** re-add `-printmapping` — `app/proguard-rules.pro:108` explains it dirties the worktree. `proguardMapping.txt` is gitignored.
 - Debug variant: `applicationId` + `.dev`, icon/label swapped via `manifestPlaceholders` (`app_icon`, `app_name`). Release uses `app_ic_launcher` / `app_name_en`. Because `AppConfig.AUTHORITY` is `BuildConfig.APPLICATION_ID + ".fileprovider"`, the FileProvider authority differs per variant (`…nopdf.dev.fileprovider` in debug) — don't hardcode it.
 - `android-pdf-viewer` is a **deliberately patched** fork, not vanilla: `PDFView` exposes `MutableLiveData` (hence the explicit `api androidx.lifecycle:lifecycle-livedata-core`), and `core-ktx` is pinned to `1.3.0` because a dynamic `+` resolved to a class-file version AGP 3.4.1's Jetifier could not process. Keep it pinned. Its bintray block is dead — ignore it.
-- **pdfium 没有文本 API。** `com.github.barteksc:pdfium-android:1.9.0` 的 Java 层完全没有
-  取字能力（无 `TextPage` / `loadTextPage` / `getTextBounded`），而 1.9.0 已是该坐标下的最新版本，
-  无法通过升级获得。其 `libmodpdfium.so` 虽导出了 `FPDFText_*`（含 `FPDFText_GetCharIndexAtPos`），
-  但 `libjniPdfium.so` 未做 JNI 绑定。因此凡是需要「拿到文字或文字坐标」的需求（选词、搜索、
-  复制）都只能走 `com.tom-roush:pdfbox-android`（已引入），代价是与 pdfium 重复解析同一份文件。
-- **选词查词的坐标换算：符号与顺序都不能写错。** `PDFView` 绘制时先
-  `canvas.translate(currentOffset)` 再 `translate(pageOffset)`（`PDFView.java:625-627`、`692-702`），
-  即 `view = currentOffset + pageOrigin + 页面点 × zoom`；`currentOffset` 与 `pageOrigin`
-  都是文档条带里的值，页面原点为正（`PdfFile.getPageOffset`），`checkLinkTapped`
-  也用 `mapped = view - currentOffset`（`DragPinchManager.java:94-95`）印证。
-  所以逆变换必须是 `(viewX - currentOffset - pageOrigin) / zoom`：
-  - 顺序写反成 `(viewX - currentOffset) / zoom - pageOrigin`，等于多减 `pageOrigin/zoom`；
-  - 符号写反成 `+ currentOffset`，等于多减一个 `currentOffset`（整页偏移翻倍）。
-  两者在 `fitEachPage` 的 zoom≈1.76 下都偏数百像素，**表现为「怎么长按都取不到词」**。
-  关键陷阱：第 0 页 `currentOffset = pageOrigin = 0`，符号写错也看不出来，
-  **必须翻到非首页验证**；`jumpTo` 会把 `currentOffset` 设为 `-pageOrigin`，这是修复后
-  `toPageY(viewY)` 应退化为 `viewY / zoom` 的判据。
-- **切词不能只按空白字符。** 很多 PDF（`Td`/`TJ` 定位排版）根本没有空格字形，
-  纯空白切分会把整页连成一个超长词，英文判定必然失败。`WordPicker.words()` 因此还按
-  「换行」和「横向间隙 > 0.28×字高」断词。
-- PDFBox 的 `TextPosition.getXDirAdj()/getYDirAdj()` 是**页面点、原点左上、y 向下**
-  （实测：792pt 页面、PDF y=700 的文字得到 yDirAdj=92）。与 PDFView 的绘制方向一致。
-- `PDFBoxResourceLoader.init(context)` 是必需的：glyphlist 等资源在 AAR 的 `assets/` 下，
-  漏掉会抛 `GlyphList ... not found`，而 `PdfPageTextExtractor` 会把它吞成空列表 →
-  表现为「取不到词」。该类会碰 `android.graphics.Path/Paint/PointF` 与 `android.util.Log`，
-  无法在纯 JVM 上跑（要用 PDFBox 验证提取，得自备这些类的桩）。
-- 取词调试日志 tag 为 `PdfLookup`，会打印命中的页码、视口/页面坐标、zoom、解析出的词数。
-  「无反应」时先看 logcat 确认是否进了 `lookup:`；这条路径用的是 `android.util.Log`
-  而非 `LogUtils`，因此 release 包同样能在 logcat 看到。排查顺序：
-  ① `onLongPress fired` 有没有打印（没有 = GestureDetector 没送到，问题在 fork/ROM 层）；
-  ② `lookup: entered` / `lookup: page=...`（没有 = 回调没进 App 代码）；
-  ③ `extract ok: ... chars=N`（N=0 或打印 `extract failed` = PDFBox 没提到文字，看异常）；
-  ④ `lookup: parsed N words` + `no translatable word ... hit=...`（坐标或切词问题）。
-  debug 包额外有「① 长按已触发 / ② 解析到 N 个词」两个系统 Toast 作为同义的可视化提示。
-- `lookupWordAt` 的协程体必须整体 try/catch。这个 scope 是普通 `Job`（`CommonActivity`），
-  子协程抛未捕获异常会取消父 Job，**之后所有 `launch` 都静默失效**——现象正是「长按毫无反应」。
-  同理，提示不要只用 `UiManager.showCenterShort`（utilcode 自定义 Toast），选词路径已统一走
-  系统 Toast，否则 Toast 一旦不生效就无法与「回调没触发」区分。
-- `PDFView` 的 `pdfFile` 字段是包内可见、`swipeVertical` 与 `PdfFile.isVertical` 是 private，
-  外部无法自行把触点换算成页面坐标；已新增 `PDFView.getPageOriginOnCanvas(int)` 封装该换算。
-  页面原点的主轴随滚动方向变化（竖向主轴是 Y），不要想当然只用 `getPageOffset`。
+- **pdfium 没有文本 API，所以「取字」类功能目前一律没有实现。** `com.github.barteksc:pdfium-android:1.9.0`
+  的 Java 层完全没有取字能力（无 `TextPage` / `loadTextPage` / `getTextBounded`），而 1.9.0 已是该
+  坐标下的最新版本，无法通过升级获得。其 `libmodpdfium.so` 虽导出了 `FPDFText_*`（含
+  `FPDFText_GetCharIndexAtPos`），但 `libjniPdfium.so` 未做 JNI 绑定。历史上曾引入
+  `com.tom-roush:pdfbox-android` 做「选词查词」，但该功能已在 0.2.0 整体移除，**PDFBox 依赖
+  及其传递依赖 BouncyCastle 也已一并删除**（同时省掉了 fontbox 的 cmap 资源与约 1MB dex）。
+  若日后要做选词 / 全文搜索 / 复制，两条路：给 fork 的 `libjniPdfium.so` 补 `FPDFText_*` 绑定
+  （最干净，且能复用 pdfium 已打开的句柄），或重新引入 PDFBox（代价是与 pdfium 重复解析同一份文件）。
 - `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:113-119`.
 
 ## 性能与稳定性（已修 / 仍存在）
@@ -70,9 +37,13 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   由 `importThenOpen()` 在 `Dispatchers.IO` 完成后再 `initPdf`；
   记账逻辑抽成 `onPdfLoaded()` 供两条路径共用，延后打开需重跑 `initScaleFactor()`。
 - **`armeabi`(ARMv5) 已从 `abiFilters` 移除**：该 ABI 早已废弃，minSdk 21 设备不再搭载，
-  约省 0.67MB。其余 native 库（pdfium）占安装包约 40%，是体积大头。
-- **仍存在：选词查词与 pdfium 重复解析同一份 PDF**。已用按页 LRU + 8s 超时缓解，
-  根治要换成单一解析器（见上面 `FPDFText_GetCharIndexAtPos` 那条）。
+  约省 0.67MB。
+- **包体现状（0.2.0 release APK 9,116,037 B ≈ 8.7MB）**：native 库占 6,089,499 B（**67%**，
+  其中 pdfium 约 4.75MB、要同时带 `arm64-v8a` 与 `armeabi-v7a`），`classes.dex` 1,644,535 B，
+  `res/` 552,678 B，`resources.arsc` 394,260 B，`assets/` 已完全为空。
+  **进一步压缩的最大杠杆是按 ABI 分包**（每包可再省约 2.9MB），其次是 PNG 调色板化
+  （见 Icons 一节）与 R8 规则；`lib/` 已无冗余 ABI，`assets/` 已无内容，语言资源已用
+  `resConfigs` 白名单过滤过。改动构建配置后请重新量一次再下结论。
 - **仍存在：Overdraw 12 处**（5 个 Activity 布局）。阅读类应用对低端机影响较大，
   但改背景层需要逐屏核对，本次未动。
 
@@ -82,12 +53,14 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   `abortOnError false`），所以 lint 只作参考。可用 `./gradlew :app:lintRelease` 手动跑，
   报告在 `app/build/reports/lint-results-release.xml`。
 - 已修：`HardcodedText` 8 → 0；`NewApi` 2 → 0（在 `ScanActivity`/`SelectActivity` 的
-  `onCreate` 上加了带说明的 `@SuppressLint`）；错误 4 → 2。
-- **剩余 2 个 Error 都在 BouncyCastle**（引用 `javax.naming`），第三方库问题，
-  源码里无法抑制，只能 `lintOptions { disable 'InvalidPackage' }`。
+  `onCreate` 上加了带说明的 `@SuppressLint`）；错误 4 → 0。
+- **Error 已经清零**。原先剩下的 2 个 Error 是 BouncyCastle 引用 `javax.naming` 触发的
+  `InvalidPackage`；BouncyCastle 只由 PDFBox 传递引入，0.2.0 移除 PDFBox 后连它一起消失，
+  因此**不再需要** `lintOptions { disable 'InvalidPackage' }`。若日后重新引入 PDFBox，
+  这 2 个 Error 会回来。
 - **误报要当心**：`UnusedResources` 会漏报——`app_name_dev` 与 `*_dev` 图标是被
   `app/build.gradle` 的 `manifestPlaceholders` 引用，lint 看不到 build.gradle。
-  同理 `TrustAllX509TrustManager` 全在 Umeng / BouncyCastle，不是本项目代码。
+  同理 `TrustAllX509TrustManager` 只在 Umeng（`com.umeng.analytics.pro.*`），不是本项目代码。
 
 ## Database (GreenDAO, schemaVersion 3)
 
@@ -115,20 +88,23 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - Cross-component messaging is EventBus (event POJOs in `common/event/`, plus `common/LiveDataBus.kt` for sticky LiveData). Add a new event object per feature rather than reusing another feature's.
 - Kotlin-dominant; the Java is mostly generated GreenDAO code, `App`/`DataManager`/`AppConfig`/`PdfUtils`, and a few holders. Match the style of the file you edit.
 - Entrypoints: `main/MainActivity` (LAUNCHER, `singleTask`, splash theme) and `preview/PreviewActivity` (`exported=true`, handles `application/pdf` VIEW intents and imports the file through `DBHelper.insert`).
-- `preview/PreviewActivity.kt` is ~1543 lines mixing rendering, gestures, bookmarks, TOC, word lookup and page export — read it in sections. TOC expand/collapse is extracted into `preview/ContentTree.kt`, and the word-lookup logic into `preview/WordPicker.kt` + `preview/PdfPageTextExtractor.kt`; those extracted pieces are the only code with real test coverage.
-- Word lookup ("选词查词"): long-press calls `lookupWordAt(viewX, viewY)` (~line 1126); it resolves one English word and offers the Haici dictionary or a browser via the `app_lookup_*` strings. `WordPicker` is deliberately pure JVM; see Build for the coordinate-transform and timeout gotchas.
+- `preview/PreviewActivity.kt` is ~1447 lines mixing rendering, gestures, bookmarks, TOC and page export — read it in sections. TOC expand/collapse is extracted into `preview/ContentTree.kt`, which (with its test) is the only extracted-and-tested piece.
 - Legacy names `AllFragment2` / `AllAdapter2` / `CollectionFragment2` / `CollectionAdapter2` are upstream YESPDF leftovers with no `…1` counterpart. Don't rename or "fix" them.
 - `resourcePrefix 'app'` (`app/build.gradle:18`): every new resource must be `app_…`. Locales: `values` (en), `values-zh-rCN`, `values-zh-rHK/rMO/rSG/rTW`.
-- `PreviewActivity` 的长按已被选词查词占用（原先是 `disableLongpress()`）。该开关只影响
-  `GestureDetector` 的长按识别，`DragPinchManager.onLongPress` 仅转发事件、不参与滚动缩放，
-  所以打开它不影响既有手势。`onTap` 仍被菜单收起/自动滚动暂停占用。
+- `PreviewActivity` 调用了 `disableLongpress()`：长按没有任何消费者（选词查词已在 0.2.0 移除），
+  关掉它能省掉 `GestureDetector` 的长按识别。该开关不影响滚动/缩放/翻页。`onTap` 被菜单收起
+  与自动滚动暂停占用。
+- `CommonActivity` 的协程 scope 是 **普通 `Job`，不是 `SupervisorJob`**，因此任何一个 `launch`
+  子协程抛未捕获异常都会取消父 Job，**此后该 Activity 上所有 `launch` 都会静默失效**。凡是会抛
+  异常的协程体都必须自己 try/catch（并放行 `CancellationException`）；不要再依赖「失败了弹个
+  提示」这种兜底——提示本身也可能不可见（见上面 Toast 那条）。
 - `targetSdk 28` — no scoped storage, no `android:exported` enforcement. Themes are hardcoded `Theme.AppCompat.Light*`; there is no dark mode. Native libs are ARM-only and only `armeabi-v7a` + `arm64-v8a` (`armeabi`/ARMv5 was dropped — see above).
 - Umeng analytics is live (`common/statistic/Statistic.kt`, hardcoded `APP_KEY`); LeakCanary is debug-only. Bugly/Tinker are fully commented out — `AppConfig.BUGLY_APPID` is dead.
 
 ## Testing
 
-- Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` and `WordPicker` do).
-- Two real pure-JVM suites, both with Chinese backtick method names: `ContentTreeTest.kt` (8 cases, TOC expand/collapse) and `WordPickerTest.kt` (29 cases, word segmentation + hit-testing + view→page transform). `WordPicker`/`CharBox`/`WordBox` are deliberately free of Android/PDFBox so they stay testable — keep that separation. `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders.
+- Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
+- `app/src/test/.../preview/ContentTreeTest.kt` (8 pure-JVM cases, Chinese backtick method names) is the only real suite; `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders.
 
 ## Icons
 
@@ -145,4 +121,4 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 
 - The 24 `*.plantuml` files (root + every package, generated by SketchIt) are **stale**. `main/main.plantuml` still shows `AllFragment`/`CollectionAdapter`, ButterKnife `Unbinder`, and GridDecorations in the wrong package; the root diagram lists a `[bugly]` module that doesn't exist. Never use them to understand structure — read the code.
 - `app/release/v2.2.0/{mapping.txt,output.json,resources.txt}` are historical release artifacts, not build inputs.
-- `README.md` numbers have drifted from the code (it claims ~30 synthetic files and a ~1800-line `PreviewActivity`; it is 20 and 1543). Prefer the code.
+- `README.md` numbers have drifted from the code (it claims ~30 synthetic files and a ~1800-line `PreviewActivity`; it is 20 and ~1447). Prefer the code.
