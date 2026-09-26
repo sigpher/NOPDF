@@ -25,6 +25,11 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled true
 
+        // App 只声明了英文与中文（简/繁），但依赖库（appcompat/material/umeng 等）自带上百种
+        // 语言的字符串，全部打进 resources.arsc 会白白多占几百 KB。这里按实际支持的语言白名单
+        // 过滤；只列语言不列密度，因此各密度图片不受影响。
+        resConfigs 'en', 'zh-rCN', 'zh-rHK', 'zh-rMO', 'zh-rSG', 'zh-rTW'
+
         ndk {
             // 只保留 64 位与 32 位 v7a。'armeabi'(ARMv5) 早已废弃，minSdk 21 的设备
             // 不再搭载，能省下约 0.67MB 安装包。
@@ -78,7 +83,28 @@ android {
         // BouncyCastle 的后量子密码（Picnic / SIKE）参数表约 7.8MB，PDFBox 解密普通 PDF
         // 只用到标准 AES/RC4，完全用不到这些表。它们是通过字符串按名加载的资源，
         // shrinkResources 无法判定为无用，因此只能在这里显式排除。
+        // 注意：packagingOptions.exclude 只作用于 JAR/Java 资源，**管不到 AAR 的 assets**；
+        // fontbox 的 CMap 排除见下方 aaptOptions.ignoreAssetsPattern。
         exclude 'org/bouncycastle/pqc/**'
+    }
+
+    aaptOptions {
+        // 打包 assets 时忽略的文件/目录（`!` 前缀表示忽略）。默认规则必须一并写出，
+        // 因为这里是整体替换而非追加。
+        //
+        // 追加部分为 PDFBox/fontbox 的各 CJK 编码 CMap 表（压缩后约 1.15MB）。本项目引入
+        // PDFBox 只为「英文选词查词」这唯一用途（PreviewActivity -> PdfPageTextExtractor），
+        // 正文提取由 PDFTextStripper 按字体编码完成：拉丁文（WinAnsi/标准编码）与
+        // Type0(Identity) 字体都不需要这些表，而非拉丁 PDF 取出的字也会被英文判定拒绝，
+        // 因此排除后功能不受影响。Identity-H / Identity-V 及极小的 H / V（合计约 4KB）予以保留。
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~' +
+                ':!UniGB-*:!UniCNS-*:!UniJIS-*:!UniKS-*' +
+                ':!Adobe-GB1-*:!Adobe-CNS1-*:!Adobe-Japan1-*:!Adobe-Japan2-*:!Adobe-Korea1-*' +
+                ':!GBK*:!GB-EUC-*:!GBpc-EUC-*' +
+                ':!CNS-EUC-*:!ETen-B5-*:!ETenms-B5-*:!HKscs-B5-*:!B5pc-*' +
+                ':!KSC-EUC-*:!KSCpc-EUC-*:!KSCms-UHC-*' +
+                ':!90ms-RKSJ-*:!90msp-RKSJ-*:!90pv-RKSJ-*:!83pv-RKSJ-*:!Add-RKSJ-*:!Ext-RKSJ-*' +
+                ':!EUC-*'
     }
 
     compileOptions {
