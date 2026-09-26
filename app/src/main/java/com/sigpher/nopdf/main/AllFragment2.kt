@@ -18,7 +18,6 @@ import com.sigpher.nopdf.common.bean.Cover
 import com.sigpher.nopdf.common.bean.Shortcut
 import com.sigpher.nopdf.common.event.AllEvent
 import com.sigpher.nopdf.common.utils.ShortcutUtils
-import com.blankj.utilcode.util.ToastUtils
 import com.chad.library.adapter.base.callback.ItemDragAndSwipeCallback
 import com.chad.library.adapter.base.listener.OnItemDragListener
 import kotlinx.android.synthetic.main.app_fragment_all.*
@@ -257,12 +256,12 @@ class AllFragment2 : CommonFragment(), IOperation {
 
     override fun createShortcut() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            ToastUtils.showShort(R.string.app_not_support_launcher_shortcut)
+            UiManager.showShort(R.string.app_not_support_launcher_shortcut)
             return
         }
         val selecteds = selectList
         if (selecteds.size > 1) {
-            ToastUtils.showShort(App.getContext().resources.getString(R.string.app_shortcut_max), 1)
+            UiManager.showShort(App.getContext().getString(R.string.app_shortcut_max, 1))
             return
         }
         selecteds[0].let {
@@ -277,7 +276,7 @@ class AllFragment2 : CommonFragment(), IOperation {
             ), false)
         }
         if (Settings.firstCreateShortcut) {
-            ToastUtils.showLong(R.string.app_first_create_shortcut_tips)
+            UiManager.showLong(R.string.app_first_create_shortcut_tips)
             Settings.firstCreateShortcut = false
         }
         (activity as MainActivity).finishOperation()

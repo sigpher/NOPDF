@@ -30,7 +30,6 @@ import com.sigpher.nopdf.preview.PreviewActivity
 import com.blankj.utilcode.util.KeyboardUtils
 import com.blankj.utilcode.util.StringUtils
 import com.blankj.utilcode.util.ThreadUtils
-import com.blankj.utilcode.util.ToastUtils
 import com.chad.library.adapter.base.callback.ItemDragAndSwipeCallback
 import com.chad.library.adapter.base.listener.OnItemDragListener
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -410,12 +409,12 @@ class CollectionFragment2 : DialogFragment(), IOperation, GroupingAdapter.Callba
             }
             setOnClickListener {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                    ToastUtils.showShort(R.string.app_not_support_launcher_shortcut)
+                    UiManager.showShort(R.string.app_not_support_launcher_shortcut)
                     return@setOnClickListener
                 }
                 val selecteds = selectPDFList
                 if (selecteds.size > 1) {
-                    ToastUtils.showShort(App.getContext().resources.getString(R.string.app_shortcut_max), 1)
+                    UiManager.showShort(App.getContext().getString(R.string.app_shortcut_max, 1))
                     return@setOnClickListener
                 }
                 selecteds[0].let {
@@ -430,7 +429,7 @@ class CollectionFragment2 : DialogFragment(), IOperation, GroupingAdapter.Callba
                     ))
                 }
                 if (Settings.firstCreateShortcut) {
-                    ToastUtils.showLong(R.string.app_first_create_shortcut_tips)
+                    UiManager.showLong(R.string.app_first_create_shortcut_tips)
                     Settings.firstCreateShortcut = false
                 }
                 cancelSelect()

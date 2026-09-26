@@ -103,7 +103,14 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 ## Architecture
 
 - Hand-written MVP. Feature packages: `main` (bookshelf), `preview` (reader), `filepicker`, `settings`, `about`; shared code in `common` (`DBHelper`, `DataManager`, `Settings`, `bean/`, `greendao/`, `event/`, `statistic/`, `utils/`, `widgets/`). `common/MVP.kt` holds the `IModel`/`IView`/`IPresenter` bases; each feature has `XxxPresenter` + `I*Contract`.
-- `BaseActivity` / `BaseFragment` / `IContract` / `ImageLoader` / `UiManager` / `DialogManager` / `ToastUtils` come from external `com.aaron:base:1.1.5-beta9` (not in this repo) — decompile the AAR if you need their behavior.
+- `BaseActivity` / `BaseFragment` / `IContract` / `ImageLoader` / `ToastUtils` come from external `com.aaron:base:1.1.5-beta9` (not in this repo) — decompile the AAR if you need their behavior. **`UiManager` and `DialogManager` are _local_** (`common/UiManager.java`, `common/DialogManager.kt`), not from the AAR.
+- **所有提示统一走 `UiManager`，不要直接用 `com.blankj:utilcode` 的 `ToastUtils`。** utilcode 的
+  `ToastFactory.newToast` 会在 `NotificationManagerCompat.areNotificationsEnabled()` 为 false 时
+  切换到 `ToastUtils$ToastWithoutNotification`，后者用 `WindowManager type = 2005`（`TYPE_TOAST`）
+  自绘窗口；**`TYPE_TOAST` 在 Android 11+ 已被系统禁止**，`addView` 失败且不抛异常，结果是
+  **所有提示彻底不可见**——而调用方无从感知，表现为「功能按了没反应」。`UiManager` 现直接用
+  系统 `Toast.makeText`（`app_toast` 自定义卡片布局已随之删除）。同理，任何「失败只弹提示」的
+  代码路径都会因此变成静默失败，排查时先确认提示真的能显示。
 - View binding is `kotlinx.android.synthetic` (20 files). Deprecated, but it is the convention — don't migrate a file to ViewBinding as a drive-by. Layouts do not use `android:onClick`.
 - Cross-component messaging is EventBus (event POJOs in `common/event/`, plus `common/LiveDataBus.kt` for sticky LiveData). Add a new event object per feature rather than reusing another feature's.
 - Kotlin-dominant; the Java is mostly generated GreenDAO code, `App`/`DataManager`/`AppConfig`/`PdfUtils`, and a few holders. Match the style of the file you edit.

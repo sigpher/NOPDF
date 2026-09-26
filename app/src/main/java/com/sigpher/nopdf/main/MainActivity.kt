@@ -437,7 +437,7 @@ class MainActivity : CommonActivity(), IMainView {
                     }
                 }
                 if (none) {
-                    ToastUtils.showShort(R.string.app_backup_select_must_not_be_empty)
+                    UiManager.showShort(R.string.app_backup_select_must_not_be_empty)
                     return@setOnClickListener
                 }
                 dialog.dismiss()

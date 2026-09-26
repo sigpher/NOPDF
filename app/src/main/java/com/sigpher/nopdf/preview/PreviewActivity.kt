@@ -19,7 +19,6 @@ import android.view.animation.LinearInterpolator
 import android.widget.SeekBar
 import android.widget.SeekBar.OnSeekBarChangeListener
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.widget.Toolbar
 import androidx.fragment.app.FragmentPagerAdapter
 import androidx.lifecycle.MutableLiveData
@@ -1114,7 +1113,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                     // 用 android.util.Log 而非 LogUtils，保证 release 也能在 logcat 看到。
                     Log.e(TAG_LOOKUP, "onLongPress fired at (${event.x}, ${event.y})")
                     if (BuildConfig.DEBUG) {
-                        Toast.makeText(this@PreviewActivity, "① 长按已触发", Toast.LENGTH_SHORT).show()
+                        UiManager.showCenterShort("① 长按已触发")
                     }
                     lookupWordAt(event.x, event.y)
                 }
@@ -1182,8 +1181,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                 }
                 Log.e(TAG_LOOKUP, "lookup: parsed ${words.size} words on page $page")
                 if (BuildConfig.DEBUG) {
-                    Toast.makeText(this@PreviewActivity, "② 解析到 ${words.size} 个词",
-                            Toast.LENGTH_SHORT).show()
+                    UiManager.showCenterShort("② 解析到 ${words.size} 个词")
                 }
                 val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
                 val target = word?.text?.let { WordPicker.normalize(it) }
@@ -1211,11 +1209,11 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     }
 
     /**
-     * 选词查词的提示统一走系统 Toast，不依赖 utilcode 的自定义 Toast（后者一旦不生效
-     * 就是完全无提示，无法与「回调没触发」区分）。
+     * 选词查词的提示。统一走 [UiManager]（内部是系统 Toast）；不再直接依赖 utilcode 的
+     * ToastUtils——它在通知被关闭时会退化成 TYPE_TOAST 自绘窗口，Android 11+ 下完全不可见。
      */
     private fun showLookupToast(message: CharSequence) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        UiManager.showCenterShort(message)
     }
 
     /**
