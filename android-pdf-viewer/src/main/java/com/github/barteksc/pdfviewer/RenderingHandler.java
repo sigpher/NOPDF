@@ -61,7 +61,7 @@ class RenderingHandler extends Handler {
 
     @Override
     public void handleMessage(Message message) {
-        RenderingTask task = (RenderingTask) message.obj;
+        final RenderingTask task = (RenderingTask) message.obj;
         try {
             final PagePart part = proceed(task);
             if (part != null) {
@@ -83,6 +83,22 @@ class RenderingHandler extends Handler {
                     pdfView.onPageError(ex);
                 }
             });
+        } catch (final Throwable t) {
+            // 渲染引擎抛出的**任何**其它异常都曾直接逃出 handleMessage，成为渲染线程上的
+            // 未捕获异常，进而杀掉整个进程（Android 的默认未捕获异常处理器会终止进程）。
+            // 换 MuPDF 后这不是假设：AndroidDrawDevice 对非 RGBA_8888 的 Bitmap 抛的是
+            // 裸 RuntimeException，不是 PageRenderingException。
+            //
+            // 渲染失败属于可报告、可跳过的单页故障，不该拖垮进程。统一包成
+            // PageRenderingException 走 onPageError —— 也就是 PreviewActivity 里
+            // UiManager.showShort(...) 那条提示，至少用户看得见发生了什么。
+            Log.e(TAG, "Rendering failed", t);
+            pdfView.post(new Runnable() {
+                @Override
+                public void run() {
+                    pdfView.onPageError(new PageRenderingException(task.page, t));
+                }
+            });
         }
     }
 
@@ -99,7 +115,24 @@ class RenderingHandler extends Handler {
 
         Bitmap render;
         try {
-            render = Bitmap.createBitmap(w, h, renderingTask.bestQuality ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565);
+            // 必须恒为 ARGB_8888：bestQuality 只用来选清晰度，**不能**用来选 Bitmap.Config。
+            //
+            // pdfium 直接按调用方给的 Bitmap 写入，RGB_565 也能画，所以旧代码在这里按
+            // bestQuality 退回 RGB_565 省一半内存（低 zoom 的 part 缓存按张数计，120 张 ×
+            // 256px 见 Constants.Cache）。换 MuPDF 后这条路走不通了——
+            // AndroidDrawDevice 的 JNI 绑定直接拿 Bitmap 的裸内存当 fz_pixmap 用，并硬性
+            // 要求 4 字节/像素：
+            //     if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
+            //         jni_throw_run(env, "new DrawDevice failed as bitmap format is not RGBA_8888");
+            //     if (info.stride != info.width * 4)
+            //         jni_throw_run(env, "new DrawDevice failed as bitmap width != stride");
+            // 传 RGB_565 进去会抛 RuntimeException。而本类 handleMessage 只捕获
+            // PageRenderingException，于是这个异常逃到渲染线程的 Looper 里成为未捕获异常，
+            // **整个进程被杀**——表现就是「一打开 PDF 就闪退」。
+            //
+            // 内存并不因此回退：Constants.Cache 的容量估算（CACHE_SIZE 120 × PART_SIZE 256
+            // × 4B ≈ 30MB，见 AGENTS.md）本来就是按 4 字节/像素算的。
+            render = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         } catch (IllegalArgumentException e) {
             Log.e(TAG, "Cannot create bitmap", e);
             return null;

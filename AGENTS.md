@@ -145,6 +145,43 @@ sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字�
 现有的 16 个测试**检测不到**这一类问题（`ContentTree` 刻意不依赖引擎类型），
 所以这个检查是唯一能挡住它的自动化关卡。
 
+### 渲染位图必须是 ARGB_8888（换引擎踩过的最大的坑）
+
+`AndroidDrawDevice` 的 JNI 绑定把 `Bitmap` 的**裸内存**直接当 `fz_pixmap` 用，
+`platform/java/jni/android/androiddrawdevice.c` 里硬性要求 4 字节/像素：
+
+```c
+if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
+    jni_throw_run(env, "new DrawDevice failed as bitmap format is not RGBA_8888");
+if (info.stride != info.width * 4)
+    jni_throw_run(env, "new DrawDevice failed as bitmap width != stride");
+```
+
+pdfium 那边随便什么 config 都能画，所以 `RenderingHandler.proceed` 一直按清晰度选
+`ARGB_8888 : RGB_565` 省一半内存（`bestQuality ? ARGB_8888 : RGB_565`）。换 MuPDF 后这条
+路直接走不通。而 `useBestQuality(...)` **全项目从未被调用**，`bestQuality` 恒为默认的
+`false`——于是**每一次**渲染都传 `RGB_565` 进去，每一页都抛异常。
+
+**实际表现是「一打开 PDF 就闪退」，而且是被杀进程而不是报错**，原因有两层叠加：
+
+1. MuPDF 抛的是**裸 `RuntimeException`**，不是 `PageRenderingException`；
+2. `RenderingHandler.handleMessage` 当时**只**捕获 `PageRenderingException`。
+
+于是异常逃出 `handleMessage` → 逃出渲染线程的 `Looper.loop()` → 成为未捕获异常 →
+Android 默认处理器终止整个进程。连带效果是「打不开任何 PDF」，且**没有任何提示**
+（既没有 `onError` 对话框，也没有 `onPageError` 的 toast）。
+
+现已修：位图恒为 `ARGB_8888`；`handleMessage` 额外兜住 `Throwable` 并包成
+`PageRenderingException` 走 `onPageError`（渲染失败是可跳过的单页故障，不该杀进程）；
+`MupdfEngine.renderPageBitmap` 再加一道 `ARGB_8888` 断言，把「调用方传错了 config」
+变成一句能直接读懂的报错，而不是一条来自 JNI 的天书。
+
+**记忆不因此回退**：`Constants.Cache` 的容量估算（`CACHE_SIZE` 120 × `PART_SIZE` 256
+× 4B ≈ 30MB）本来就是按 4 字节/像素算的。**别再把 `Bitmap.Config` 和清晰度挂钩。**
+
+`PdfEngine.renderPageBitmap` 的 javadoc 已写明该约束（引擎中立接口层，pdfium 能容忍、
+MuPDF 不能的差异都记在这里或紧邻的注释里）。
+
 ### 包体
 
 | ABI | pdfium（旧） | MuPDF（新） | 增量 |
@@ -159,8 +196,9 @@ v7a 4,635,758 B。MuPDF 的 `.so` 压缩比约 0.51，比 pdfium 的 0.44 略差
 仍有回收空间：MuPDF 默认打包了 mujs（JS 引擎）、extract、cmarkgfm（markdown）、
 openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CFLAGS` 关掉。
 
-**换引擎未经真机渲染验证**（本机无 emulator / system-image / 真机，只做到了 dex 级校验）。
-升级前请手动核对渲染效果。
+**换引擎仍未做真机渲染验证**（本机无 emulator / system-image / 真机，只做到了 dex 级校验）。
+上面那条 `ARGB_8888` 的坑是用户在真机上撞出来的第一处渲染问题，但**渲染效果本身
+（分块、缩放、翻页、页面间隔、书签、目录）依旧没人核对过**，升级前请手动过一遍。
 
 ## 性能与稳定性（已修 / 仍存在）
 

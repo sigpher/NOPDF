@@ -225,6 +225,15 @@ class MupdfEngine implements PdfEngine {
         if (regionWidth <= 0 || regionHeight <= 0) {
             return;
         }
+        // AndroidDrawDevice 把 Bitmap 的裸内存直接当 fz_pixmap 用，JNI 侧硬性要求
+        // 4 字节/像素，否则抛裸 RuntimeException。这里先挡一道，把「调用方传错了
+        // Bitmap.Config」这件本来极难查的事变成一条能直接读懂的报错。
+        if (bitmap.getConfig() != Bitmap.Config.ARGB_8888) {
+            throw new IllegalArgumentException(
+                    "MuPDF's AndroidDrawDevice requires an ARGB_8888 bitmap, but got "
+                            + bitmap.getConfig() + " for page " + pageIndex
+                            + "; see androiddrawdevice.c (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)");
+        }
         Page page = page(handle, pageIndex);
         float scale = Math.min(bitmap.getWidth() / regionWidth, bitmap.getHeight() / regionHeight);
         Matrix ctm = new Matrix(scale, 0f, 0f, scale, -bounds.left * scale, -bounds.top * scale);

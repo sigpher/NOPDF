@@ -47,6 +47,11 @@ public interface PdfEngine {
     /**
      * Renders {@code bounds} (in page points, relative to the page) of a page into
      * {@code bitmap}, which the caller has already sized and positioned.
+     *
+     * <p>{@code bitmap} must be {@link Bitmap.Config#ARGB_8888}. pdfium tolerated other
+     * configs, MuPDF does not — its draw device wraps the bitmap's raw memory as an
+     * {@code fz_pixmap} and rejects anything that is not 4 bytes per pixel. Callers must
+     * not pick the config from a quality heuristic.
      */
     void renderPageBitmap(EngineDocument document, Bitmap bitmap, int pageIndex, Rect bounds,
                           boolean annotationRendering);
