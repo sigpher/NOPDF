@@ -38,6 +38,7 @@ Dev 角标素材固化在 tools/dev_badge.png，脚本不会读取自己生成�
 """
 
 import argparse
+import io
 import os
 import sys
 from collections import deque
@@ -78,6 +79,11 @@ BADGE_CORNER_MARGIN = 0.0      # 角标贴右下角，无额外内边距
 BADGE_CIRCLE_CENTER_RATIO = 0.74   # 圆形/自适应可见区内，角标中心相对位置
 BADGE_CIRCLE_SIZE_RATIO = 0.20     # 圆形/自适应可见区内，角标宽度占比
 BADGE_ADAPTIVE_SIZE_RATIO = 0.16    # 自适应前景专用：可见区比圆形 legacy 更挤，角标略小
+
+# PNG 调色板化（PNG-8）参数。见 save_icon / _palette_error_ok。
+PALETTE_COLORS = 256
+PALETTE_P99_RGB_ERROR = 16          # 可见像素 RGB 误差的 99 分位上限（0~255）
+PALETTE_MAX_ALPHA_ERROR = 48        # alpha 误差上限，超出说明素材不适合压成调色板
 
 
 def log(msg):
@@ -426,8 +432,62 @@ def save_icon(im, res_dir, folder, name):
     target_dir = os.path.join(res_dir, folder)
     os.makedirs(target_dir, exist_ok=True)
     path = os.path.join(target_dir, name)
-    im.convert("RGBA").save(path, "PNG", optimize=True)
-    log("写入 %s (%dx%d)" % (os.path.relpath(path, REPO_ROOT), im.size[0], im.size[1]))
+    rgba = im.convert("RGBA")
+
+    truecolor = _encode_png(rgba)
+    indexed = None
+    try:
+        # 平涂 + 抗锯齿的图标用 256 色调色板（PNG-8）能满足需求，体积约为真彩的 1/5~1/10。
+        # FASTOCTREE 对 RGBA 会连 alpha 一起量化，并以 tRNS 多级透明保存，因此圆形/自适应
+        # 图标边缘的羽化仍然保留（实测 alpha 级数 110 -> 31，均值误差 0.72/255）。
+        pal = rgba.quantize(colors=PALETTE_COLORS, method=Image.FASTOCTREE)
+        candidate = _encode_png(pal)
+        if len(candidate) < len(truecolor) and _palette_error_ok(rgba, pal):
+            indexed = candidate
+    except Exception:
+        indexed = None
+
+    chosen = indexed if indexed is not None else truecolor
+    with open(path, "wb") as f:
+        f.write(chosen)
+    log("写入 %s (%dx%d, %s, %d 字节)" % (
+        os.path.relpath(path, REPO_ROOT), im.size[0], im.size[1],
+        "PNG-8" if indexed is not None else "PNG-32", len(chosen)))
+
+
+def _encode_png(im):
+    buf = io.BytesIO()
+    im.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _palette_error_ok(im, pal):
+    """调色板化误差是否可接受。
+
+    只看**可见像素**（alpha > 0）的 RGB 误差：全透明像素的 RGB 是填充色，量化后即使不同
+    也完全不可见，若一并统计会把圆形图标的误差虚报得很大。同时限制 alpha 误差上限，
+    避免渐变素材被压出色带。超出阈值就退回真彩。
+    """
+    back = pal.convert("RGBA")
+    r, g, b = ImageChops.difference(im.convert("RGB"), back.convert("RGB")).split()
+    max_rgb = ImageChops.lighter(ImageChops.lighter(r, g), b)
+
+    visible = im.getchannel("A").point(lambda v: 255 if v > 0 else 0)
+    visible_count = visible.histogram()[255]
+    if visible_count == 0:
+        return True
+    hist = ImageChops.multiply(max_rgb, visible).histogram()
+    cumulative = 0
+    p99 = 255
+    for value, count in enumerate(hist):
+        cumulative += count
+        if cumulative >= visible_count * 0.99:
+            p99 = value
+            break
+    if p99 > PALETTE_P99_RGB_ERROR:
+        return False
+    return ImageChops.difference(
+        im.getchannel("A"), back.getchannel("A")).getextrema()[1] <= PALETTE_MAX_ALPHA_ERROR
 
 
 def main():
