@@ -20,7 +20,6 @@ public final class DataManager {
     private static List<Collection> collectionList;
 
     private static List<Cover> coverList = new ArrayList<>();
-    private static List<PDF> tempList = new ArrayList<>();
 
     static void init() {
         pdfList = DBHelper.queryAllPDF();
@@ -60,35 +59,10 @@ public final class DataManager {
     }
 
     private static void updateCoverList() {
+        // 交由纯函数一次分组建好（旧实现按分组逐个全量扫描 + 排序，见 CoverBuilder 注释）。
+        List<Cover> covers = CoverBuilder.build(DataManager.pdfList, DataManager.collectionList);
         DataManager.coverList.clear();
-        for (Collection c : DataManager.collectionList) {
-            List<PDF> temp = getPdfList(c.getName());
-            List<PDF> list;
-            switch (temp.size()) {
-                case 0:
-                    continue;
-                case 1:
-                    list = temp.subList(0, 1);
-                    break;
-                case 2:
-                    list = temp.subList(0, 2);
-                    break;
-                case 3:
-                    list = temp.subList(0, 3);
-                    break;
-                default:
-                    list = temp.subList(0, 4);
-                    break;
-            }
-            String name = temp.get(0).getDir();
-            List<String> coverList = new ArrayList<>();
-            for (PDF pdf : list) {
-                coverList.add(pdf.getCover());
-            }
-            int count = temp.size();
-            Cover cover = new Cover(name, coverList, count);
-            DataManager.coverList.add(cover);
-        }
+        DataManager.coverList.addAll(covers);
     }
 
     private static void updatePathList() {
@@ -113,15 +87,21 @@ public final class DataManager {
         return pdfList;
     }
 
+    /**
+     * 取某个分组下的 PDF，按 position 降序。
+     *
+     * 注意返回的是**新建的列表**：旧实现复用同一个 static `tempList`，任何调用方只要跨越
+     * 下一次调用继续持有它，内容就会被悄悄改写。
+     */
     public static List<PDF> getPdfList(String name) {
-        DataManager.tempList.clear();
+        List<PDF> list = new ArrayList<>();
         for (PDF pdf : DataManager.pdfList) {
             if (pdf.getDir().equals(name)) {
-                tempList.add(pdf);
+                list.add(pdf);
             }
         }
-        Collections.sort(tempList, (o1, o2) -> o2.getPosition() - o1.getPosition());
-        return DataManager.tempList;
+        Collections.sort(list, (o1, o2) -> o2.getPosition() - o1.getPosition());
+        return list;
     }
 
     public static List<Collection> getCollectionList() {
