@@ -16,7 +16,6 @@
 package com.github.barteksc.pdfviewer;
 
 import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.util.SparseBooleanArray;
 
@@ -293,7 +292,7 @@ class PdfFile {
         return !openedPages.get(docPage, false);
     }
 
-    public void renderPageBitmap(Bitmap bitmap, int pageIndex, Rect bounds, boolean annotationRendering) {
+    public void renderPageBitmap(Bitmap bitmap, int pageIndex, RectF bounds, boolean annotationRendering) {
         int docPage = documentPage(pageIndex);
         engine.renderPageBitmap(document, bitmap, docPage, bounds, annotationRendering);
     }

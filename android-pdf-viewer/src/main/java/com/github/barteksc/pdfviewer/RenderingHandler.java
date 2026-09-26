@@ -17,8 +17,6 @@ package com.github.barteksc.pdfviewer;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.Matrix;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.os.Looper;
@@ -43,9 +41,6 @@ class RenderingHandler extends Handler {
 
     private PDFView pdfView;
 
-    private RectF renderBounds = new RectF();
-    private Rect roundedRenderBounds = new Rect();
-    private Matrix renderMatrix = new Matrix();
     private boolean running = false;
 
     RenderingHandler(Looper looper, PDFView pdfView) {
@@ -137,23 +132,28 @@ class RenderingHandler extends Handler {
             Log.e(TAG, "Cannot create bitmap", e);
             return null;
         }
-        calculateBounds(w, h, renderingTask.bounds);
-
-        pdfFile.renderPageBitmap(render, renderingTask.page, roundedRenderBounds, renderingTask.annotationRendering);
+        // The task's bounds are page-relative (fractions of the page) and are handed to the
+        // engine unchanged, for two reasons.
+        //
+        // They used to be run through a Matrix here that tried to turn the fractions into a
+        // page-point rectangle, but it had no page size to work from — only the tile's own
+        // pixel dimensions — so the rectangle it produced came out roughly the size of the whole
+        // page, and with a negative origin for every tile but the first. MuPDF duly painted
+        // (almost) the entire page into each tile, and PDFView.drawPart then stretched each of
+        // those onto its own 1/cols x 1/rows slot: the page came out as a grid of many repeated
+        // miniature pages. The engine knows the page's point size, so the conversion belongs
+        // there — see PageRegion.
+        //
+        // Keeping one rectangle for both ends also makes the invariant checkable: a tile's bitmap
+        // covers exactly the area its PagePart.pageRelativeBounds names, because both are derived
+        // from these same four numbers. It is also why the bounds stay RectF — rounding them to
+        // whole points first lost enough precision on a 0..1 fraction to show up as seams.
+        pdfFile.renderPageBitmap(render, renderingTask.page, renderingTask.bounds,
+                renderingTask.annotationRendering);
 
         return new PagePart(renderingTask.page, render,
                 renderingTask.bounds, renderingTask.thumbnail,
                 renderingTask.cacheOrder);
-    }
-
-    private void calculateBounds(int width, int height, RectF pageSliceBounds) {
-        renderMatrix.reset();
-        renderMatrix.postTranslate(-pageSliceBounds.left * width, -pageSliceBounds.top * height);
-        renderMatrix.postScale(1 / pageSliceBounds.width(), 1 / pageSliceBounds.height());
-
-        renderBounds.set(0, 0, width, height);
-        renderMatrix.mapRect(renderBounds);
-        renderBounds.round(roundedRenderBounds);
     }
 
     void stop() {

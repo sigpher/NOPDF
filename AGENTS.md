@@ -49,9 +49,17 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
    由 `closeDocument` 统一 `destroy()`。`PdfFile` 的 `openedPages` 与 part 缓存（按张数计）
    仍是上层的驻留上限，引擎自身不淘汰。
 2. **局部渲染**：`AndroidDrawDevice` 要的是**设备空间** patch（`bbox = xOrigin+patchX0 …`），
-   不是 pdfium 的页空间子矩形。`MupdfEngine.renderPageBitmap` 改用 CTM 表达：按
-   `scale = min(bw/regionW, bh/regionH)` 缩放，再平移使区域左上角落在 bitmap 原点。
-   缩放/分块渲染的坐标语义依赖于此，**改这里会直接导致画面错位**。
+   不是 pdfium 的页空间子矩形，所以区域只能用 CTM 表达。**`renderPageBitmap` 的 `bounds` 是
+   「页相对比例」（0..1，原点左上），不是页空间点坐标** —— 换算由 `engine/PageRegion` 用
+   `getPageSize()`（页点尺寸）做，两轴**各自**缩放 `scaleX = bw/regionW`、`scaleY = bh/regionH`，
+   再平移使区域左上角落到 bitmap 原点。
+   - 为什么是比例而不是点：调用方（`PagesLoader`）只知道页面在**布局后**的像素尺寸，
+     手里没有页点尺寸；而同一个矩形还要交给 `PDFView.drawPart` 拉伸到位图对应的格子里。
+     两端共用同一组 0..1 的数字，「位图内容 == 格子所指的那块区域」才成为可验证的不变量。
+   - 为什么两轴分别缩放：分块位图恒为 `PART_SIZE` 正方形，而它在页内的切片通常不是正方形。
+     用单一 `min(bw/rw, bh/rh)`「铺满」会画出**超集**——邻块内容渗进每一块，并在块与块的
+     接缝处重复。`drawPart` 本来就会把位图拉伸回格子，像素长宽比自会被抵消。
+   - **改这里会直接导致画面错位**；`PageRegionTest`（6 例）钉住了这套换算。
 3. **密码**：MuPDF 用返回值而非异常（`needsPassword()` + `authenticatePassword()`），
    在 `finishOpen` 里翻译成 `PasswordRequiredException`，以保持
    `loadError → onError → showError` 链路与 `PreviewActivity` 的 `is` 判断不变。
@@ -142,8 +150,8 @@ R8 只要改名或删掉其中任何一个，运行时就是 `UnsatisfiedLinkErr
 sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字还在 dex 里
 ```
 
-现有的 16 个测试**检测不到**这一类问题（`ContentTree` 刻意不依赖引擎类型），
-所以这个检查是唯一能挡住它的自动化关卡。
+现有的 22 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
+问题，所以这个检查是唯一能挡住它的自动化关卡。
 
 ### 渲染位图必须是 ARGB_8888（换引擎踩过的最大的坑）
 
@@ -182,6 +190,33 @@ Android 默认处理器终止整个进程。连带效果是「打不开任何 PD
 `PdfEngine.renderPageBitmap` 的 javadoc 已写明该约束（引擎中立接口层，pdfium 能容忍、
 MuPDF 不能的差异都记在这里或紧邻的注释里）。
 
+### 分块坐标换算错了 → 满屏重复的小页面（0.5.2 修）
+
+闪退修掉之后，用户报「能打开了，但页面出现好多重复的小页面」。根因是**页相对比例被当成了
+页空间点坐标**，而且是**上游 pdfium 时代就存在、一直被 pdfium 的行为掩盖**的那类错误。
+
+链条是：
+
+1. `PagesLoader` 把一页切成 `rows × cols` 网格，给每块一个 **0..1 的页相对矩形**
+   （`pageRelativeBounds`）。这个矩形一路带进 `PagePart`，`PDFView.drawPart` 再用它把位图
+   拉伸到对应的格子——**格子指名要哪块区域，位图里就该是哪块区域**。
+2. 上游 `RenderingHandler.calculateBounds` 试着把这个比例换算成页空间矩形，再喂给 pdfium。
+   但它手里只有**分块位图自己的像素尺寸**（`PART_SIZE = 256`），**没有页面尺寸**，换不出来：
+   A4 页切 3 列 4 行时，它给第 1 行第 2 列算出的是 `(-256, 0, 512, 1024)`——尺寸约等于**整页**，
+   原点还是负的。
+3. 于是 `MupdfEngine` 老老实实把**整页**画进了每一个 256px 分块，`drawPart` 再把这一堆
+   「整页缩略图」分别拉伸到各自那 1/3 × 1/4 的格子里 → **一屏 rows×cols 个重复的小页面**。
+
+修法不是去调那个矩阵，而是**删掉它**：`renderPageBitmap` 的 `bounds` 改为直接收
+**页相对比例**（`RectF`），换算下沉到 `engine/PageRegion`（引擎知道 `getPageSize()`），
+并按上面第 2 条改成两轴分别缩放。附带好处：两端共用同一组 0..1 的数字，
+「位图内容 == 格子所指区域」成为可断言的不变量，`PageRegionTest` 就是钉它的。
+
+**教训**：上游代码不等于正确代码。`calculateBounds` 与 barteksc 上游**逐字节相同**，
+`PdfFile.renderPageBitmap` 也只是把 `bounds` 原样转发给 pdfium——但「原样转发」本身就说明
+这个矩形的语义从未被真正验证过。**引擎换掉时，凡是把 pdfium 隐含语义当契约的地方都要重审**，
+`PdfEngine` 的 javadoc 才是唯一可信的契约来源。
+
 ### 包体
 
 | ABI | pdfium（旧） | MuPDF（新） | 增量 |
@@ -196,9 +231,10 @@ v7a 4,635,758 B。MuPDF 的 `.so` 压缩比约 0.51，比 pdfium 的 0.44 略差
 仍有回收空间：MuPDF 默认打包了 mujs（JS 引擎）、extract、cmarkgfm（markdown）、
 openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CFLAGS` 关掉。
 
-**换引擎仍未做真机渲染验证**（本机无 emulator / system-image / 真机，只做到了 dex 级校验）。
-上面那条 `ARGB_8888` 的坑是用户在真机上撞出来的第一处渲染问题，但**渲染效果本身
-（分块、缩放、翻页、页面间隔、书签、目录）依旧没人核对过**，升级前请手动过一遍。
+**换引擎的渲染验证仍不完整**（本机无 emulator / system-image / 真机，只做到了 dex 级校验）。
+`ARGB_8888` 与「分块坐标换算」两处都是**用户在真机上撞出来**的，说明这类问题只能靠真机暴露。
+已修的两处见上；**渲染效果本身（缩放、翻页、页面间隔、书签、目录、页面链接）依旧没人完整
+核对过**，升级前请手动过一遍。
 
 ## 性能与稳定性（已修 / 仍存在）
 
@@ -316,7 +352,8 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
 ## Testing
 
 - Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- Real suites (both pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse) and `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 16 tests, 0 failures.
+- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 22 tests, 0 failures.
+- `PageRegionTest` lives in the `app` module but exercises the **library** module's `engine/PageRegion`, which is why that class is `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath.
 
 ## Icons
 

@@ -2,7 +2,6 @@ package com.github.barteksc.pdfviewer.engine;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.ParcelFileDescriptor;
 
@@ -45,15 +44,24 @@ public interface PdfEngine {
     void openPage(EngineDocument document, int pageIndex);
 
     /**
-     * Renders {@code bounds} (in page points, relative to the page) of a page into
-     * {@code bitmap}, which the caller has already sized and positioned.
+     * Renders one tile of a page into {@code bitmap}, which the caller has already sized.
+     *
+     * <p>{@code bounds} is <em>page-relative</em>: fractions of the page in 0..1, origin at the
+     * top-left, exactly the rectangle {@code PagePart} carries and {@code PDFView.drawPart}
+     * stretches the finished bitmap onto. It is deliberately not expressed in page points,
+     * because the caller only knows the page's size in the scaled pixels it is laid out in —
+     * converting here is what keeps the rendered tile and the slot it is drawn into describing
+     * the same area. See {@link PageRegion}.
+     *
+     * <p>The bitmap need not have the same aspect ratio as the region; implementations map the
+     * region onto it and the caller stretches the result back on draw.
      *
      * <p>{@code bitmap} must be {@link Bitmap.Config#ARGB_8888}. pdfium tolerated other
      * configs, MuPDF does not — its draw device wraps the bitmap's raw memory as an
      * {@code fz_pixmap} and rejects anything that is not 4 bytes per pixel. Callers must
      * not pick the config from a quality heuristic.
      */
-    void renderPageBitmap(EngineDocument document, Bitmap bitmap, int pageIndex, Rect bounds,
+    void renderPageBitmap(EngineDocument document, Bitmap bitmap, int pageIndex, RectF bounds,
                           boolean annotationRendering);
 
     /** May be null when the document carries no metadata. */

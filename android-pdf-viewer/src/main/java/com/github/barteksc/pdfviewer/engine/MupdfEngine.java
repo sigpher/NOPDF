@@ -2,7 +2,6 @@ package com.github.barteksc.pdfviewer.engine;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.ParcelFileDescriptor;
 import android.util.SparseArray;
@@ -210,21 +209,23 @@ class MupdfEngine implements PdfEngine {
     }
 
     /**
-     * Renders the page-space rectangle {@code bounds} (in points) into {@code bitmap}.
+     * Renders the page-relative tile {@code bounds} (fractions of the page) into {@code bitmap}.
      *
      * <p>MuPDF's draw device takes a device-space patch rather than a page-space source
-     * rectangle, so the page region is instead expressed as a transform: the region is scaled
-     * to the bitmap and shifted so that its top-left lands on the bitmap origin. The device
-     * then covers the whole bitmap.
+     * rectangle, so the tile is instead expressed as a transform: the tile's slice of the page
+     * is scaled onto the bitmap and shifted so that its top-left lands on the bitmap origin.
+     * The device then covers the whole bitmap.
+     *
+     * <p>Note the tile is scaled onto the bitmap <em>per axis</em> rather than by a single
+     * "cover the bitmap" factor. Tiles are square bitmaps of {@code Constants.PART_SIZE} pixels
+     * cut from a generally non-square page, so one uniform scale large enough to cover the bitmap
+     * would paint a superset of the tile: neighbouring content bleeding into every tile, and
+     * duplicated along the seams where tiles meet. {@code PDFView.drawPart} stretches each
+     * bitmap onto its slot on draw, which undoes the resulting pixel aspect anyway.
      */
     @Override
-    public void renderPageBitmap(EngineDocument handle, Bitmap bitmap, int pageIndex, Rect bounds,
+    public void renderPageBitmap(EngineDocument handle, Bitmap bitmap, int pageIndex, RectF bounds,
                                  boolean annotationRendering) {
-        float regionWidth = bounds.width();
-        float regionHeight = bounds.height();
-        if (regionWidth <= 0 || regionHeight <= 0) {
-            return;
-        }
         // AndroidDrawDevice 把 Bitmap 的裸内存直接当 fz_pixmap 用，JNI 侧硬性要求
         // 4 字节/像素，否则抛裸 RuntimeException。这里先挡一道，把「调用方传错了
         // Bitmap.Config」这件本来极难查的事变成一条能直接读懂的报错。
@@ -234,9 +235,15 @@ class MupdfEngine implements PdfEngine {
                             + bitmap.getConfig() + " for page " + pageIndex
                             + "; see androiddrawdevice.c (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)");
         }
+        EngineSize pageSize = getPageSize(handle, pageIndex);
+        PageRegion.Region region = PageRegion.of(bounds.left, bounds.top, bounds.right,
+                bounds.bottom, pageSize.getWidth(), pageSize.getHeight());
+        if (region.width() <= 0 || region.height() <= 0) {
+            return;
+        }
+        float[] transform = PageRegion.deviceTransform(region, bitmap.getWidth(), bitmap.getHeight());
         Page page = page(handle, pageIndex);
-        float scale = Math.min(bitmap.getWidth() / regionWidth, bitmap.getHeight() / regionHeight);
-        Matrix ctm = new Matrix(scale, 0f, 0f, scale, -bounds.left * scale, -bounds.top * scale);
+        Matrix ctm = new Matrix(transform[0], 0f, 0f, transform[1], transform[2], transform[3]);
         AndroidDrawDevice device = new AndroidDrawDevice(bitmap, 0, 0, true);
         try {
             // MuPDF draws annotations as part of run(); pdfium's flag only gated them, and
