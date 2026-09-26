@@ -120,14 +120,14 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
   `android.splits.abi`（`enable true` + `reset()` + `include 'armeabi-v7a','arm64-v8a'`、
   `universalApk false`）。此前 abiFilters 只决定"哪些 ABI 进包"，两个 ABI 仍塞在同一个 APK 里；
   现在每个 APK 只带一份 native 库。`armeabi`(ARMv5) / `x86` / `x86_64` 均不产出。
-- **包体现状（0.2.2 release，按 ABI 拆包后）**：`arm64-v8a` 包 **6,142,542 B ≈ 5.9MB**、
-  `armeabi-v7a` 包 **6,003,851 B ≈ 5.7MB**（0.2.1 的通用包是 9,116,313 B —— 拆包每包少约 3MB，
-  native 依然是最大单项但占比降到约 50%：`lib/` 压缩后 3,114,114 / 2,975,385 B）。
-  两包其余部分几乎相同：`classes.dex` 1,646,269 B，`res/` 553,243 B，
-  `resources.arsc` 394,940 B，`assets/` 已完全为空。两个 APK 用**同一签名与同一 versionCode**，
-  安装时按设备 ABI 选包。下一步可压缩的空间已不大：PNG 调色板化（见 Icons 一节）与 R8 规则是
-  剩余手段；`lib/` 已无冗余 ABI，`assets/` 已无内容，语言资源已用 `resConfigs` 白名单过滤过。
-  改动构建配置后请重新量一次再下结论。
+- **包体现状（0.5.0 release，换 MuPDF 后）**：`arm64-v8a` 包 **8,517,261 B ≈ 8.1MB**、
+  `armeabi-v7a` 包 **7,660,782 B ≈ 7.3MB**，即 0.2.2（6,142,542 / 6,003,851 B）的基础上
+  分别 +2.37MB / +1.66MB，换引擎是包体变大的主因（详见「渲染引擎」一节的对比表）。
+  压缩后 `lib/` 为 5,492,229 / 4,635,758 B，**native 占压缩后体积约 60%**。
+  两包用**同一签名与同一 versionCode**，安装时按设备 ABI 选包。
+  剩余可压缩空间主要在 MuPDF 本身（可关掉 mujs/extract/cmarkgfm/openjpeg），
+  其次是 PNG 调色板化（见 Icons 一节）与 R8 规则；`assets/` 已无内容，
+  语言资源已用 `resConfigs` 白名单过滤过。改动构建配置后请重新量一次再下结论。
 - **已修：读页时的两处逐帧开销。** `drawBookmark` 原先挂在 `PDFView.onDrawAll` 上，且每次
   调用都 `BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)`——只要当前页
   有书签，**每一帧都会重新解码一张 PNG**；现改为 `by lazy` 缓存一次（`bookmarkBitmap`）。
