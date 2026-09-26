@@ -28,6 +28,7 @@ import com.sigpher.nopdf.common.*
 import com.sigpher.nopdf.common.bean.PDF
 import com.sigpher.nopdf.common.event.RecentPDFEvent
 import com.sigpher.nopdf.common.utils.AboutUtils
+import com.sigpher.nopdf.common.utils.DictionaryLauncher
 import com.sigpher.nopdf.common.utils.NotchUtils
 import com.sigpher.nopdf.common.utils.PdfUtils
 import com.sigpher.nopdf.settings.SettingsActivity.Companion.start
@@ -1004,7 +1005,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         if (password != null) {
             configurator = configurator.password(password)
         }
-        configurator.disableLongpress()
+        // 选词查词需要长按，这里不能再 disableLongpress()。
+        configurator
                 .swipeHorizontal(Settings.swipeHorizontal)
                 .nightMode(isNightMode.value == true)
                 .pageFling(Settings.swipeHorizontal)
@@ -1047,7 +1049,77 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                     if (judgeAutoScrollPause()) return@onTap true
                     judgeFlipPage(event)
                 }
+                .onLongPress { event: MotionEvent ->
+                    lookupWordAt(event.x, event.y)
+                }
                 .load()
+    }
+
+    /**
+     * 长按选词查词：把按下的位置换算成 PDF 页面坐标，取出该处的英文单词，
+     * 再交给已安装的海词词典 App，或回落到系统浏览器打开 dict.cn 查询页。
+     *
+     * 说明：
+     * 1. 原先这里调用了 disableLongpress()，因为没有长按的消费者；选词需要长按，故已移除。
+     *    该开关只影响 GestureDetector 的长按识别，而 DragPinchManager.onLongPress 仅把事件
+     *    转发给 callbacks，不参与滚动、缩放与翻页，因此打开不会影响既有手势。
+     * 2. 取词依赖 PDFBox 重新解析该页（pdfium 1.9.0 没有文本 API），耗时，必须放到后台线程。
+     * 3. 扫描版 PDF 没有文本层，会取不到词，只提示不崩溃。
+     */
+    private fun lookupWordAt(viewX: Float, viewY: Float) {
+        val path = pdf?.path ?: return
+        val page = app_pdfview.currentPage
+        val origin = app_pdfview.getPageOriginOnCanvas(page) ?: return
+        val transform = PageTransform(
+                zoom = app_pdfview.zoom,
+                currentXOffset = app_pdfview.currentXOffset,
+                currentYOffset = app_pdfview.currentYOffset,
+                pageOffsetX = origin.x,
+                pageOffsetY = origin.y
+        )
+        val pageX = transform.toPageX(viewX)
+        val pageY = transform.toPageY(viewY)
+        val tolerance = transform.viewToPageLength(WordPicker.TAP_TOLERANCE_PX)
+        val appContext = applicationContext
+        val pwd = password
+        launch {
+            val words = withContext(Dispatchers.IO) {
+                val chars = PdfPageTextExtractor.get()
+                        .pageChars(appContext, path, page, pwd)
+                WordPicker.words(chars)
+            }
+            if (!isActive) {
+                return@launch
+            }
+            val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
+            if (word == null || !WordPicker.isTranslatable(word.text)) {
+                UiManager.showCenterShort(R.string.app_lookup_no_word)
+                return@launch
+            }
+            showWordLookupDialog(word.text)
+        }
+    }
+
+    /**
+     * 弹出查词选择框：优先用海词词典 App，其次用浏览器打开 dict.cn。
+     */
+    private fun showWordLookupDialog(word: String) {
+        android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.app_word_lookup_title)
+                .setMessage(word)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setNeutralButton(R.string.app_lookup_in_browser) { _, _ ->
+                    if (!DictionaryLauncher.launchWeb(this, word)) {
+                        UiManager.showCenterShort(R.string.app_lookup_no_target)
+                    }
+                }
+                .setPositiveButton(R.string.app_lookup_in_dict_app) { _, _ ->
+                    if (!DictionaryLauncher.launchDictionaryApp(this, word)
+                            && !DictionaryLauncher.launchWeb(this, word)) {
+                        UiManager.showCenterShort(R.string.app_lookup_no_target)
+                    }
+                }
+                .show()
     }
 
     private fun initBgSize() {

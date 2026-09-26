@@ -137,4 +137,10 @@
     </string-array>
     <string name="app_hide_scroll_level_bar">隐藏滚动调节</string>
 
+    <string name="app_word_lookup_title">查词</string>
+    <string name="app_lookup_in_browser">浏览器查词</string>
+    <string name="app_lookup_in_dict_app">海词词典</string>
+    <string name="app_lookup_no_word">此处没有英文单词</string>
+    <string name="app_lookup_no_target">没有可用于查词的应用</string>
+
 </resources>
