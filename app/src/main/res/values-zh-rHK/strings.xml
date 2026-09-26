@@ -142,4 +142,11 @@
     <string name="app_lookup_timeout">讀取該頁超時，請重試</string>
     <string name="app_lookup_no_target">沒有可用於查詞的應用</string>
 
+    <string name="app_backup_item_count_preview">共 16 本</string>
+    <string name="app_cd_back">返回</string>
+    <string name="app_cd_create_shortcut">建立捷徑</string>
+    <string name="app_cd_delete">刪除</string>
+    <string name="app_cd_select_all">全選</string>
+    <string name="app_cd_clear_search">清除搜尋</string>
+
 </resources>

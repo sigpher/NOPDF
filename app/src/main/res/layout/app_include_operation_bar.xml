@@ -15,6 +15,7 @@
 
     <ImageButton
         android:id="@+id/app_ibtn_cancel"
+        android:contentDescription="@string/app_cd_back"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
@@ -36,6 +37,7 @@
 
     <ImageButton
         android:id="@+id/app_ibtn_create_shortcut"
+        android:contentDescription="@string/app_cd_create_shortcut"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
@@ -49,6 +51,7 @@
 
     <ImageButton
         android:id="@+id/app_ibtn_delete"
+        android:contentDescription="@string/app_cd_delete"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
@@ -61,6 +64,7 @@
 
     <ImageButton
         android:id="@+id/app_ibtn_select_all"
+        android:contentDescription="@string/app_cd_select_all"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"

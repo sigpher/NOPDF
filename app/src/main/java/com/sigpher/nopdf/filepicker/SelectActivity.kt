@@ -2,6 +2,7 @@ package com.sigpher.nopdf.filepicker
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -61,6 +62,10 @@ class SelectActivity : CommonActivity() {
         }
     }
 
+    @SuppressLint("NewApi")
+    // lint 会把 setStatusBarLight 判成 NewApi（需要 API 23），但那是误报：
+    // com.aaron:base 的 setStatusBarLight(Activity, boolean) 反编译后调用的是
+    // View.setSystemUiVisibility（API 14），在 minSdk 21 上安全。
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initToolbar()

@@ -147,4 +147,11 @@
         <item>Unlimited</item>
     </string-array>
 
+    <string name="app_backup_item_count_preview">16 books</string>
+    <string name="app_cd_back">Back</string>
+    <string name="app_cd_create_shortcut">Create shortcut</string>
+    <string name="app_cd_delete">Delete</string>
+    <string name="app_cd_select_all">Select all</string>
+    <string name="app_cd_clear_search">Clear search</string>
+
 </resources>

@@ -161,6 +161,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
 
     private var init = true
     private var pdf: PDF? = null // 本应用打开
+    private var pendingImportPath: String? = null // 外部 Intent 打开且尚未入库的路径
+    private var savedState: Bundle? = null
     private var uri: Uri? = null // 一般是外部应用打开
     private var curPage = 0
     private var pageCount = 0
@@ -484,7 +486,12 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         getData(savedInstanceState)
         initScaleFactor()
         initListener()
-        initPdf(uri, pdf)
+        val pending = pendingImportPath
+        if (pending == null) {
+            initPdf(uri, pdf)
+        } else {
+            importThenOpen(pending)
+        }
     }
 
     /**
@@ -551,6 +558,7 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
     }
 
     private fun getData(savedInstanceState: Bundle?) {
+        savedState = savedInstanceState
         intent.apply {
             uri = data
             val uri = this@PreviewActivity.uri
@@ -560,31 +568,79 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                 val path = getStringExtra(EXTRA_PATH)
                 path?.let { pdf = DBHelper.queryPDFByPath(it) }
             } else if (uri != null) {
-                val file = UriUtils.uri2File(uri)
-                val path = if (file != null) UriUtils.uri2File(uri).absolutePath else null
-                path?.also {
-                    pdf = DBHelper.queryPDFByPath(it)
+                val path = UriUtils.uri2File(uri)?.absolutePath
+                if (path != null) {
+                    pdf = DBHelper.queryPDFByPath(path)
                     if (pdf == null) {
-                        DBHelper.insert(listOf(it))
-                        pdf = DBHelper.queryPDFByPath(it)
+                        // 外部 Intent 打开且本地还没有这条记录，需要先入库。
+                        // 入库会为每本书渲染首页封面（PdfRenderer + 全屏 Bitmap），
+                        // 放在这里做会阻塞 onCreate 主线程，大文件直接 ANR，
+                        // 因此只记下路径，交给 initView 末尾在后台线程完成。
+                        pendingImportPath = path
+                        return@apply
                     }
                 }
             }
-            pdf?.let {
-                curPage = savedInstanceState?.getInt(BUNDLE_CUR_PAGE) ?: it.curPage
-                password = savedInstanceState?.getString(BUNDLE_PASSWORD)
-                pageCount = it.totalPage
-
-                val cur = System.currentTimeMillis()
-                @SuppressLint("SimpleDateFormat")
-                val df: DateFormat = SimpleDateFormat("yyyyMMddHHmmss")
-                it.latestRead = TimeUtils.millis2String(cur, df).toLong()
-                DBHelper.updatePDF(it)
-                DBHelper.insertRecent(it)
-                DataManager.updatePDFs()
-                EventBus.getDefault().post(RecentPDFEvent())
-            }
+            pdf?.let { onPdfLoaded(it) }
         }
+    }
+
+    /**
+     * 打开外部 PDF 且需要先入库时调用：后台线程完成入库与封面渲染，再回到主线程打开。
+     */
+    private fun importThenOpen(path: String) {
+        val dialog = DialogManager.createLoadingDialog(this)
+        if (!isFinishing) {
+            dialog.show()
+        }
+        launch {
+            val imported = withContext(Dispatchers.IO) {
+                try {
+                    DBHelper.insert(listOf(path))
+                    true
+                } catch (e: Throwable) {
+                    LogUtils.e("import failed: $path, ${e.message}")
+                    false
+                }
+            }
+            if (!isActive) {
+                return@launch
+            }
+            val loaded = if (imported) DBHelper.queryPDFByPath(path) else null
+            try {
+                dialog.dismiss()
+            } catch (ignored: Throwable) {
+            }
+            if (loaded == null) {
+                UiManager.showCenterShort(R.string.app_file_is_empty)
+                finish()
+                return@launch
+            }
+            pdf = loaded
+            onPdfLoaded(loaded)
+            // 延后打开，所以要重跑一次取 scaleFactor
+            initScaleFactor()
+            initPdf(uri, loaded)
+        }
+    }
+
+    /**
+     * PDF 就绪后的记账：恢复阅读进度、刷新「最近阅读」、通知书架刷新。
+     * 原本内联在 getData 里，入库改到后台线程后需要与 [importThenOpen] 共用。
+     */
+    private fun onPdfLoaded(pdf: PDF) {
+        curPage = savedState?.getInt(BUNDLE_CUR_PAGE) ?: pdf.curPage
+        password = savedState?.getString(BUNDLE_PASSWORD)
+        pageCount = pdf.totalPage
+
+        val cur = System.currentTimeMillis()
+        @SuppressLint("SimpleDateFormat")
+        val df: DateFormat = SimpleDateFormat("yyyyMMddHHmmss")
+        pdf.latestRead = TimeUtils.millis2String(cur, df).toLong()
+        DBHelper.updatePDF(pdf)
+        DBHelper.insertRecent(pdf)
+        DataManager.updatePDFs()
+        EventBus.getDefault().post(RecentPDFEvent())
     }
 
     @SuppressLint("ClickableViewAccessibility")

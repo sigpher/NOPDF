@@ -42,6 +42,37 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   页面原点的主轴随滚动方向变化（竖向主轴是 Y），不要想当然只用 `getPageOffset`。
 - `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:106-113`.
 
+## 性能与稳定性（已修 / 仍存在）
+
+- **`PdfUtils` 曾泄漏文件描述符**：旧实现 `return` 写在 `finally` 里，且从不 close
+  `PdfRenderer` / `ParcelFileDescriptor`。导入流程对每本书都会调用它渲染封面，
+  累积会到「too many open files」。现已改为 try-with-resources。
+- **`PdfUtils` 曾用 `MODE_READ_WRITE` 打开 PDF**（只读场景），在只读介质/分区存储下打不开。
+  现为 `MODE_READ_ONLY`。
+- **外部 Intent 打开 PDF 的入库曾阻塞主线程**：`getData()` 在 `onCreate` 里同步调用
+  `DBHelper.insert`，而入库要渲染封面。现改为记录 `pendingImportPath`，
+  由 `importThenOpen()` 在 `Dispatchers.IO` 完成后再 `initPdf`；
+  记账逻辑抽成 `onPdfLoaded()` 供两条路径共用，延后打开需重跑 `initScaleFactor()`。
+- **`armeabi`(ARMv5) 已从 `abiFilters` 移除**：该 ABI 早已废弃，minSdk 21 设备不再搭载，
+  约省 0.67MB。其余 native 库（pdfium）占安装包约 40%，是体积大头。
+- **仍存在：选词查词与 pdfium 重复解析同一份 PDF**。已用按页 LRU + 8s 超时缓解，
+  根治要换成单一解析器（见上面 `FPDFText_GetCharIndexAtPos` 那条）。
+- **仍存在：Overdraw 12 处**（5 个 Activity 布局）。阅读类应用对低端机影响较大，
+  但改背景层需要逐屏核对，本次未动。
+
+## Lint
+
+- 项目**没有 lint 门禁**（release 的 `lintOptions` 是 `checkReleaseBuilds false` +
+  `abortOnError false`），所以 lint 只作参考。可用 `./gradlew :app:lintRelease` 手动跑，
+  报告在 `app/build/reports/lint-results-release.xml`。
+- 已修：`HardcodedText` 8 → 0；`NewApi` 2 → 0（在 `ScanActivity`/`SelectActivity` 的
+  `onCreate` 上加了带说明的 `@SuppressLint`）；错误 4 → 2。
+- **剩余 2 个 Error 都在 BouncyCastle**（引用 `javax.naming`），第三方库问题，
+  源码里无法抑制，只能 `lintOptions { disable 'InvalidPackage' }`。
+- **误报要当心**：`UnusedResources` 会漏报——`app_name_dev` 与 `*_dev` 图标是被
+  `app/build.gradle` 的 `manifestPlaceholders` 引用，lint 看不到 build.gradle。
+  同理 `TrustAllX509TrustManager` 全在 Umeng / BouncyCastle，不是本项目代码。
+
 ## Database (GreenDAO, schemaVersion 3)
 
 - Codegen output is **committed** at `app/src/main/java/com/sigpher/nopdf/common/greendao/` (`targetGenDir 'src/main/java'`). Bump `greendao { schemaVersion }` (`app/build.gradle:84`) and regenerate; never hand-edit `DaoMaster`/`*Dao`.

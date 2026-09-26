@@ -4,7 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     app:cardCornerRadius="12dp"
-    app:cardElevation="0dp">
+    app:cardElevation="0dp"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <FrameLayout
         android:id="@+id/app_bg"
@@ -26,7 +27,7 @@
                 android:maxLines="2"
                 android:textStyle="bold"
                 android:textColor="@color/base_black"
-                android:text="Android" />
+                tools:text="Android" />
 
             <TextView
                 android:id="@+id/app_count"
@@ -35,7 +36,7 @@
                 android:layout_marginTop="4dp"
                 android:maxLines="1"
                 android:textSize="@dimen/base_text_small"
-                android:text="共16本" />
+                tools:text="@string/app_backup_item_count_preview" />
 
         </LinearLayout>
 
