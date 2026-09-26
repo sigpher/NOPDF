@@ -1,6 +1,7 @@
 package com.sigpher.nopdf.preview
 
 import android.content.Context
+import android.util.Log
 
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
@@ -58,7 +59,13 @@ class PdfPageTextExtractor private constructor() {
 
     private fun extract(context: Context, path: String, page: Int, password: String?): List<CharBox> {
         // PDFBox 的资源加载器必须先初始化一次（读取字体等内置资源）。
-        PDFBoxResourceLoader.init(context.applicationContext)
+        // 注意：这一行在 try 之外——它一旦抛异常会直接冒泡出去，此处显式兜住并记录。
+        try {
+            PDFBoxResourceLoader.init(context.applicationContext)
+        } catch (t: Throwable) {
+            Log.e(TAG, "PDFBoxResourceLoader.init failed", t)
+            return emptyList()
+        }
         var document: PDDocument? = null
         return try {
             // 用临时文件模式而不是默认的全内存模式：大 PDF 全内存会直接把应用 OOM 掉，
@@ -99,9 +106,12 @@ class PdfPageTextExtractor private constructor() {
             stripper.endPage = page + 1
             // 逐字形已在 processTextPosition 中收集，忽略这里返回的整页文本。
             stripper.getText(document)
+            Log.e(TAG, "extract ok: page=$page chars=${chars.size}")
             chars
         } catch (e: Throwable) {
             // 解析失败（加密、损坏、无文本层）都退化为「取不到词」，不能影响阅读。
+            // 但仍要记录原因，否则「取不到词」无从区分是加密、损坏还是缺资源。
+            Log.e(TAG, "extract failed: page=$page path=$path", e)
             emptyList()
         } finally {
             try {
@@ -113,6 +123,9 @@ class PdfPageTextExtractor private constructor() {
 
     companion object {
         private const val MAX_CACHED_PAGES = 8
+
+        /** 与 PreviewActivity 的选词查词共用同一个 logcat tag，便于一起抓取。 */
+        private const val TAG = "PdfLookup"
 
         @Volatile
         private var instance: PdfPageTextExtractor? = null

@@ -13,16 +13,19 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.*
 import android.view.animation.LinearInterpolator
 import android.widget.SeekBar
 import android.widget.SeekBar.OnSeekBarChangeListener
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.widget.Toolbar
 import androidx.fragment.app.FragmentPagerAdapter
 import androidx.lifecycle.MutableLiveData
 import com.aaron.base.impl.OnClickListenerImpl
 import com.aaron.base.impl.TextWatcherImpl
+import com.sigpher.nopdf.BuildConfig
 import com.sigpher.nopdf.R
 import com.sigpher.nopdf.common.*
 import com.sigpher.nopdf.common.bean.PDF
@@ -1107,6 +1110,12 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                     judgeFlipPage(event)
                 }
                 .onLongPress { event: MotionEvent ->
+                    // 诊断：确认 GestureDetector 是否真的把长按回调送到了这里。
+                    // 用 android.util.Log 而非 LogUtils，保证 release 也能在 logcat 看到。
+                    Log.e(TAG_LOOKUP, "onLongPress fired at (${event.x}, ${event.y})")
+                    if (BuildConfig.DEBUG) {
+                        Toast.makeText(this@PreviewActivity, "① 长按已触发", Toast.LENGTH_SHORT).show()
+                    }
                     lookupWordAt(event.x, event.y)
                 }
                 .load()
@@ -1124,17 +1133,19 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
      * 3. 扫描版 PDF 没有文本层，会取不到词，只提示不崩溃。
      */
     private fun lookupWordAt(viewX: Float, viewY: Float) {
+        // 诊断：用 android.util.Log 而非 LogUtils，保证 release 也能在 logcat 里看到。
+        Log.e(TAG_LOOKUP, "lookup: entered view=($viewX, $viewY)")
         val path = pdf?.path
         if (path.isNullOrEmpty()) {
-            LogUtils.e(TAG_LOOKUP, "lookup: no pdf path, abort")
-            UiManager.showCenterShort(R.string.app_lookup_no_word)
+            Log.e(TAG_LOOKUP, "lookup: no pdf path, abort")
+            showLookupToast(getString(R.string.app_lookup_no_word))
             return
         }
         val page = app_pdfview.currentPage
         val origin = app_pdfview.getPageOriginOnCanvas(page)
         if (origin == null) {
-            LogUtils.e(TAG_LOOKUP, "lookup: document not loaded yet, abort")
-            UiManager.showCenterShort(R.string.app_lookup_no_word)
+            Log.e(TAG_LOOKUP, "lookup: document not loaded yet, abort")
+            showLookupToast(getString(R.string.app_lookup_no_word))
             return
         }
         val transform = PageTransform(
@@ -1149,35 +1160,62 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         val tolerance = transform.viewToPageLength(WordPicker.TAP_TOLERANCE_PX)
         val appContext = applicationContext
         val pwd = password
-        LogUtils.d(TAG_LOOKUP, "lookup: page=$page view=($viewX,$viewY) page=($pageX,$pageY) zoom=${transform.zoom} tol=$tolerance")
+        Log.e(TAG_LOOKUP, "lookup: page=$page view=($viewX,$viewY) page=($pageX,$pageY) zoom=${transform.zoom} tol=$tolerance")
         launch {
-            // PDFBox 要重新解析整份 PDF，大文件可能很慢；加超时兜底，
-            // 否则用户只会看到「按了没反应」。
-            val words = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
-                withContext(Dispatchers.IO) {
-                    val chars = PdfPageTextExtractor.get()
-                            .pageChars(appContext, path, page, pwd)
-                    WordPicker.words(chars)
+            try {
+                // PDFBox 要重新解析整份 PDF，大文件可能很慢；加超时兜底，
+                // 否则用户只会看到「按了没反应」。
+                val words = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        val chars = PdfPageTextExtractor.get()
+                                .pageChars(appContext, path, page, pwd)
+                        WordPicker.words(chars)
+                    }
                 }
+                if (!isActive) {
+                    return@launch
+                }
+                if (words == null) {
+                    Log.e(TAG_LOOKUP, "lookup: parse timeout after ${LOOKUP_TIMEOUT_MS}ms")
+                    showLookupToast(getString(R.string.app_lookup_timeout))
+                    return@launch
+                }
+                Log.e(TAG_LOOKUP, "lookup: parsed ${words.size} words on page $page")
+                if (BuildConfig.DEBUG) {
+                    Toast.makeText(this@PreviewActivity, "② 解析到 ${words.size} 个词",
+                            Toast.LENGTH_SHORT).show()
+                }
+                val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
+                val target = word?.text?.let { WordPicker.normalize(it) }
+                if (target.isNullOrEmpty() || !WordPicker.isTranslatable(target)) {
+                    Log.e(TAG_LOOKUP, "lookup: no translatable word at ($pageX,$pageY), hit=${word?.text}")
+                    showLookupToast(getString(R.string.app_lookup_no_word))
+                    return@launch
+                }
+                showWordLookupDialog(target)
+            } catch (t: Throwable) {
+                // 不能吞掉取消异常，否则会破坏协程的取消语义。
+                if (t is kotlinx.coroutines.CancellationException) {
+                    throw t
+                }
+                // 兜底很重要：本 scope 是普通 Job（非 SupervisorJob），协程体一旦抛异常
+                // 会取消父 Job，之后所有 launch 都会静默失效（表现为「长按毫无反应」）。
+                Log.e(TAG_LOOKUP, "lookup: failed", t)
+                showLookupToast(if (BuildConfig.DEBUG) {
+                    "取词异常：$t"
+                } else {
+                    getString(R.string.app_lookup_no_word)
+                })
             }
-            if (!isActive) {
-                return@launch
-            }
-            if (words == null) {
-                LogUtils.e(TAG_LOOKUP, "lookup: parse timeout after ${LOOKUP_TIMEOUT_MS}ms")
-                UiManager.showCenterShort(R.string.app_lookup_timeout)
-                return@launch
-            }
-            LogUtils.d(TAG_LOOKUP, "lookup: parsed ${words.size} words on page $page")
-            val word = WordPicker.wordAt(words, pageX, pageY, tolerance)
-            val target = word?.text?.let { WordPicker.normalize(it) }
-            if (target.isNullOrEmpty() || !WordPicker.isTranslatable(target)) {
-                LogUtils.d(TAG_LOOKUP, "lookup: no translatable word at ($pageX,$pageY), hit=${word?.text}")
-                UiManager.showCenterShort(R.string.app_lookup_no_word)
-                return@launch
-            }
-            showWordLookupDialog(target)
         }
+    }
+
+    /**
+     * 选词查词的提示统一走系统 Toast，不依赖 utilcode 的自定义 Toast（后者一旦不生效
+     * 就是完全无提示，无法与「回调没触发」区分）。
+     */
+    private fun showLookupToast(message: CharSequence) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     /**

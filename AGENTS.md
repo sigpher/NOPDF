@@ -42,7 +42,17 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   表现为「取不到词」。该类会碰 `android.graphics.Path/Paint/PointF` 与 `android.util.Log`，
   无法在纯 JVM 上跑（要用 PDFBox 验证提取，得自备这些类的桩）。
 - 取词调试日志 tag 为 `PdfLookup`，会打印命中的页码、视口/页面坐标、zoom、解析出的词数。
-  「无反应」时先看 logcat 确认是否进了 `lookup:`。
+  「无反应」时先看 logcat 确认是否进了 `lookup:`；这条路径用的是 `android.util.Log`
+  而非 `LogUtils`，因此 release 包同样能在 logcat 看到。排查顺序：
+  ① `onLongPress fired` 有没有打印（没有 = GestureDetector 没送到，问题在 fork/ROM 层）；
+  ② `lookup: entered` / `lookup: page=...`（没有 = 回调没进 App 代码）；
+  ③ `extract ok: ... chars=N`（N=0 或打印 `extract failed` = PDFBox 没提到文字，看异常）；
+  ④ `lookup: parsed N words` + `no translatable word ... hit=...`（坐标或切词问题）。
+  debug 包额外有「① 长按已触发 / ② 解析到 N 个词」两个系统 Toast 作为同义的可视化提示。
+- `lookupWordAt` 的协程体必须整体 try/catch。这个 scope 是普通 `Job`（`CommonActivity`），
+  子协程抛未捕获异常会取消父 Job，**之后所有 `launch` 都静默失效**——现象正是「长按毫无反应」。
+  同理，提示不要只用 `UiManager.showCenterShort`（utilcode 自定义 Toast），选词路径已统一走
+  系统 Toast，否则 Toast 一旦不生效就无法与「回调没触发」区分。
 - `PDFView` 的 `pdfFile` 字段是包内可见、`swipeVertical` 与 `PdfFile.isVertical` 是 private，
   外部无法自行把触点换算成页面坐标；已新增 `PDFView.getPageOriginOnCanvas(int)` 封装该换算。
   页面原点的主轴随滚动方向变化（竖向主轴是 Y），不要想当然只用 `getPageOffset`。
