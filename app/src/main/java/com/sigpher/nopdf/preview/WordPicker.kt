@@ -38,15 +38,21 @@ data class WordBox(
 /**
  * 从 PDFView 的视图像素坐标系换算到 PDF 页面坐标系所需的全部参数。
  *
- * 之所以要把这几个值显式收集齐，是因为页面在文档条带中的原点并不是 [pageOffsetX] 单独决定的：
- * 竖向滚动时主轴是 Y（[pageOffsetX] 实际取的是居中偏移），横向滚动时主轴是 X。
- * 这些语义都封装在 PdfFile 里，调用方只需把两个偏移按正确的轴填进来。
+ * 绘制时的坐标链（见 `PDFView.draw` / `drawPart`）：canvas 先平移 [currentXOffset]/[currentYOffset]
+ * （视口左上角在文档条带中的位置），再平移 [pageOffsetX]/[pageOffsetY]（页面原点在文档条带中的
+ * 位置，为**正值**，见 `PdfFile.getPageOffset`），所以：
+ *
+ *     view = currentOffset + pageOrigin + 页面点 × zoom
+ *
+ * 逆变换就是「先把两个偏移一起减掉，再除以 zoom」。[PageTransform] 显式收集这几个值，
+ * 是因为页面在文档条带中的原点并不是单个量决定的：竖向滚动时主轴是 Y（另一轴取居中偏移），
+ * 横向滚动时主轴是 X。这些语义都封装在 PdfFile 里，调用方只需把两个偏移按正确的轴填进来。
  *
  * @param zoom             PDFView 当前缩放（PDF 点 → 视图像素的倍数）
  * @param currentXOffset   视口左上角在文档条带中的 X（视图像素，已含缩放）
  * @param currentYOffset   视口左上角在文档条带中的 Y（视图像素，已含缩放）
- * @param pageOffsetX      当前页在文档条带中的原点 X（视图像素，已含缩放）
- * @param pageOffsetY      当前页在文档条带中的原点 Y（视图像素，已含缩放）
+ * @param pageOffsetX      当前页在文档条带中的原点 X（视图像素，已含缩放，正值）
+ * @param pageOffsetY      当前页在文档条带中的原点 Y（视图像素，已含缩放，正值）
  */
 data class PageTransform(
         val zoom: Float,
@@ -55,12 +61,18 @@ data class PageTransform(
         val pageOffsetX: Float,
         val pageOffsetY: Float
 ) {
-    // 三个量（视图像素、页面原点偏移）都已是「含缩放」的单位，必须先相减再除以 zoom。
-    // 顺序写反（先除 zoom 再减原点）等于减了 origin/zoom，在 fitEachPage 的
-    // zoom≈1.76 下偏差可达数百像素，表现为「怎么按都取不到词」。
-    fun toPageX(viewX: Float): Float = (viewX + currentXOffset - pageOffsetX) / zoom
+    // 两个偏移都必须「先相减、再除以 zoom」，而且 currentOffset 的符号不能写成加号：
+    // 由 view = currentOffset + pageOrigin + 页面点 × zoom 得
+    //   页面点 = (view - currentOffset - pageOrigin) / zoom。
+    // 两种写错方式都会在 fitEachPage 的 zoom≈1.76 下偏出数百像素，
+    // 表现为「怎么长按都取不到词」：
+    //   1. 顺序反了：(view - currentOffset) / zoom - pageOrigin，多减了 pageOrigin/zoom；
+    //   2. 符号写反了：+ currentOffset，多减了一个 currentOffset（整页偏移翻倍）。
+    // 注意第 0 页 currentOffset = pageOrigin = 0，符号写错也看不出来，
+    // 所以回归测试必须覆盖「非首页且 currentOffset = -pageOrigin」的真实对齐场景。
+    fun toPageX(viewX: Float): Float = (viewX - currentXOffset - pageOffsetX) / zoom
 
-    fun toPageY(viewY: Float): Float = (viewY + currentYOffset - pageOffsetY) / zoom
+    fun toPageY(viewY: Float): Float = (viewY - currentYOffset - pageOffsetY) / zoom
 
     /** 视图像素长度换算为页面点，用于把手指容差换算到页面坐标系。 */
     fun viewToPageLength(viewLength: Float): Float = viewLength / zoom

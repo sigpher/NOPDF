@@ -10,7 +10,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   - `./gradlew :app:assembleDebug` — primary build check
   - `./gradlew :app:assembleRelease` — `minifyEnabled` + `shrinkResources`
   - `./gradlew :app:testDebugUnitTest` — JVM unit tests
-  - one class: `./gradlew :app:testDebugUnitTest --tests "com.sigpher.nopdf.preview.ContentTreeTest"`
+  - one class: `./gradlew :app:testDebugUnitTest --tests "com.sigpher.nopdf.preview.ContentTreeTest"` (or `…preview.WordPickerTest`)
 - `jcenter()` / `dl.bintray.com` are still listed in the root `build.gradle` but are dead. `mavenCentral()` + `maven.aliyun.com/repository/public` mirrors are present in both `buildscript` and `allprojects`, so deps (incl. Umeng) do resolve. README also claims a `plugins.gradle.org/m2` mirror — it is **not** in any build file. Trust the build files over the README.
 - Release mapping lands in `app/build/outputs/mapping/release/mapping.txt` (AGP writes it from the `-verbose` flag). Do **not** re-add `-printmapping` — `app/proguard-rules.pro:108` explains it dirties the worktree. `proguardMapping.txt` is gitignored.
 - Debug variant: `applicationId` + `.dev`, icon/label swapped via `manifestPlaceholders` (`app_icon`, `app_name`). Release uses `app_ic_launcher` / `app_name_en`. Because `AppConfig.AUTHORITY` is `BuildConfig.APPLICATION_ID + ".fileprovider"`, the FileProvider authority differs per variant (`…nopdf.dev.fileprovider` in debug) — don't hardcode it.
@@ -20,12 +20,18 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
   无法通过升级获得。其 `libmodpdfium.so` 虽导出了 `FPDFText_*`（含 `FPDFText_GetCharIndexAtPos`），
   但 `libjniPdfium.so` 未做 JNI 绑定。因此凡是需要「拿到文字或文字坐标」的需求（选词、搜索、
   复制）都只能走 `com.tom-roush:pdfbox-android`（已引入），代价是与 pdfium 重复解析同一份文件。
-- **选词查词的坐标换算顺序不能写反。** `PDFView` 绘制时页面原点在视图像素里是
-  `pageOrigin - currentOffset`（`PDFView.java:692-702`），页面点再乘 `zoom`。
-  所以逆变换必须是 `(viewX + currentOffset - pageOrigin) / zoom`；
-  写成 `(viewX + currentOffset) / zoom - pageOrigin` 等于减了 `pageOrigin/zoom`，
-  在 `fitEachPage` 的 zoom≈1.76 下 y 会偏 60+ 点，**表现为「怎么长按都取不到词」**。
-  三个量都是「含缩放」的视图像素，必须先相减再除。
+- **选词查词的坐标换算：符号与顺序都不能写错。** `PDFView` 绘制时先
+  `canvas.translate(currentOffset)` 再 `translate(pageOffset)`（`PDFView.java:625-627`、`692-702`），
+  即 `view = currentOffset + pageOrigin + 页面点 × zoom`；`currentOffset` 与 `pageOrigin`
+  都是文档条带里的值，页面原点为正（`PdfFile.getPageOffset`），`checkLinkTapped`
+  也用 `mapped = view - currentOffset`（`DragPinchManager.java:94-95`）印证。
+  所以逆变换必须是 `(viewX - currentOffset - pageOrigin) / zoom`：
+  - 顺序写反成 `(viewX - currentOffset) / zoom - pageOrigin`，等于多减 `pageOrigin/zoom`；
+  - 符号写反成 `+ currentOffset`，等于多减一个 `currentOffset`（整页偏移翻倍）。
+  两者在 `fitEachPage` 的 zoom≈1.76 下都偏数百像素，**表现为「怎么长按都取不到词」**。
+  关键陷阱：第 0 页 `currentOffset = pageOrigin = 0`，符号写错也看不出来，
+  **必须翻到非首页验证**；`jumpTo` 会把 `currentOffset` 设为 `-pageOrigin`，这是修复后
+  `toPageY(viewY)` 应退化为 `viewY / zoom` 的判据。
 - **切词不能只按空白字符。** 很多 PDF（`Td`/`TJ` 定位排版）根本没有空格字形，
   纯空白切分会把整页连成一个超长词，英文判定必然失败。`WordPicker.words()` 因此还按
   「换行」和「横向间隙 > 0.28×字高」断词。
@@ -40,7 +46,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - `PDFView` 的 `pdfFile` 字段是包内可见、`swipeVertical` 与 `PdfFile.isVertical` 是 private，
   外部无法自行把触点换算成页面坐标；已新增 `PDFView.getPageOriginOnCanvas(int)` 封装该换算。
   页面原点的主轴随滚动方向变化（竖向主轴是 Y），不要想当然只用 `getPageOffset`。
-- `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:106-113`.
+- `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:113-119`.
 
 ## 性能与稳定性（已修 / 仍存在）
 
@@ -75,7 +81,7 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 
 ## Database (GreenDAO, schemaVersion 3)
 
-- Codegen output is **committed** at `app/src/main/java/com/sigpher/nopdf/common/greendao/` (`targetGenDir 'src/main/java'`). Bump `greendao { schemaVersion }` (`app/build.gradle:84`) and regenerate; never hand-edit `DaoMaster`/`*Dao`.
+- Codegen output is **committed** at `app/src/main/java/com/sigpher/nopdf/common/greendao/` (`targetGenDir 'src/main/java'`). Bump `greendao { schemaVersion }` (`app/build.gradle:90-96`) and regenerate; never hand-edit `DaoMaster`/`*Dao`.
 - **Two independent migration layers — a schema change usually needs both:**
   1. Schema: `UpdateOpenHelper.onUpgrade` → `MigrationHelper.migrate`. Its `onDropAllTables` calls `DaoMaster.dropAllTables`, which drops **every** table, so all DAOs (`PDFDao`, `CollectionDao`, `RecentPDFDao`) must stay in the vararg list at `UpdateOpenHelper.java:45` — an omitted DAO is recreated empty (data loss).
   2. Data backfill: `App.onCreate` calls `DBHelper.migrate()` only when `!isFirstInstall()` (compares `firstInstallTime == lastUpdateTime`) *and* a `DB_VERSION` pref is below `DaoMaster.SCHEMA_VERSION`. `migrate()` renumbers `position` and resets `scaleFactor`. A schema bump alone leaves this stale; the first-install guard also means the backfill never runs on a clean device.
@@ -92,19 +98,20 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - Cross-component messaging is EventBus (event POJOs in `common/event/`, plus `common/LiveDataBus.kt` for sticky LiveData). Add a new event object per feature rather than reusing another feature's.
 - Kotlin-dominant; the Java is mostly generated GreenDAO code, `App`/`DataManager`/`AppConfig`/`PdfUtils`, and a few holders. Match the style of the file you edit.
 - Entrypoints: `main/MainActivity` (LAUNCHER, `singleTask`, splash theme) and `preview/PreviewActivity` (`exported=true`, handles `application/pdf` VIEW intents and imports the file through `DBHelper.insert`).
-- `preview/PreviewActivity.kt` is ~1390 lines mixing rendering, gestures, bookmarks, TOC and page export — read it in sections. TOC expand/collapse is extracted into `preview/ContentTree.kt` and is the one thing with real test coverage.
+- `preview/PreviewActivity.kt` is ~1543 lines mixing rendering, gestures, bookmarks, TOC, word lookup and page export — read it in sections. TOC expand/collapse is extracted into `preview/ContentTree.kt`, and the word-lookup logic into `preview/WordPicker.kt` + `preview/PdfPageTextExtractor.kt`; those extracted pieces are the only code with real test coverage.
+- Word lookup ("选词查词"): long-press calls `lookupWordAt(viewX, viewY)` (~line 1126); it resolves one English word and offers the Haici dictionary or a browser via the `app_lookup_*` strings. `WordPicker` is deliberately pure JVM; see Build for the coordinate-transform and timeout gotchas.
 - Legacy names `AllFragment2` / `AllAdapter2` / `CollectionFragment2` / `CollectionAdapter2` are upstream YESPDF leftovers with no `…1` counterpart. Don't rename or "fix" them.
 - `resourcePrefix 'app'` (`app/build.gradle:18`): every new resource must be `app_…`. Locales: `values` (en), `values-zh-rCN`, `values-zh-rHK/rMO/rSG/rTW`.
 - `PreviewActivity` 的长按已被选词查词占用（原先是 `disableLongpress()`）。该开关只影响
   `GestureDetector` 的长按识别，`DragPinchManager.onLongPress` 仅转发事件、不参与滚动缩放，
   所以打开它不影响既有手势。`onTap` 仍被菜单收起/自动滚动暂停占用。
-- `targetSdk 28` — no scoped storage, no `android:exported` enforcement. Themes are hardcoded `Theme.AppCompat.Light*`; there is no dark mode. Native libs are ARM-only (`armeabi`, `armeabi-v7a`, `arm64-v8a`).
+- `targetSdk 28` — no scoped storage, no `android:exported` enforcement. Themes are hardcoded `Theme.AppCompat.Light*`; there is no dark mode. Native libs are ARM-only and only `armeabi-v7a` + `arm64-v8a` (`armeabi`/ARMv5 was dropped — see above).
 - Umeng analytics is live (`common/statistic/Statistic.kt`, hardcoded `APP_KEY`); LeakCanary is debug-only. Bugly/Tinker are fully commented out — `AppConfig.BUGLY_APPID` is dead.
 
 ## Testing
 
-- Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- `app/src/test/.../preview/ContentTreeTest.kt` (8 pure-JVM cases, Chinese backtick method names) is the only real suite; `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders.
+- Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` and `WordPicker` do).
+- Two real pure-JVM suites, both with Chinese backtick method names: `ContentTreeTest.kt` (8 cases, TOC expand/collapse) and `WordPickerTest.kt` (29 cases, word segmentation + hit-testing + view→page transform). `WordPicker`/`CharBox`/`WordBox` are deliberately free of Android/PDFBox so they stay testable — keep that separation. `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders.
 
 ## Icons
 
@@ -121,4 +128,4 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 
 - The 24 `*.plantuml` files (root + every package, generated by SketchIt) are **stale**. `main/main.plantuml` still shows `AllFragment`/`CollectionAdapter`, ButterKnife `Unbinder`, and GridDecorations in the wrong package; the root diagram lists a `[bugly]` module that doesn't exist. Never use them to understand structure — read the code.
 - `app/release/v2.2.0/{mapping.txt,output.json,resources.txt}` are historical release artifacts, not build inputs.
-- `README.md` numbers have drifted from the code (it claims ~30 synthetic files and a ~1800-line `PreviewActivity`; it is 20 and 1389). Prefer the code.
+- `README.md` numbers have drifted from the code (it claims ~30 synthetic files and a ~1800-line `PreviewActivity`; it is 20 and 1543). Prefer the code.

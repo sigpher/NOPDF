@@ -254,11 +254,33 @@ class WordPickerTest {
                 pageOffsetY = 60f
         )
 
-        // 三个量都是含缩放的视图像素，必须先相减再除以 zoom：
-        // (70 + 100 - 40) / 2 = 65
-        assertEquals(65f, t.toPageX(70f), EPS)
-        // (105 + 50 - 60) / 2 = 47.5
-        assertEquals(47.5f, t.toPageY(105f), EPS)
+        // view = currentOffset + pageOrigin + 页面点 × zoom，逆变换先减两个偏移再除：
+        // (70 - 100 - 40) / 2 = -35
+        assertEquals(-35f, t.toPageX(70f), EPS)
+        // (105 - 50 - 60) / 2 = -2.5
+        assertEquals(-2.5f, t.toPageY(105f), EPS)
+    }
+
+    @Test
+    fun `翻到非首页后页顶对齐仍能命中`() {
+        // 真实场景：竖向滚动 + fitEachPage，zoom≈1.76。PDFView.jumpTo 会把视口偏移设为
+        // currentOffset = -pageOrigin，使页顶对齐视口顶部（PDFView.java:301）。
+        // 正确换算应退化为 viewY / zoom；若把 currentOffset 的符号写成加号，
+        // 会得到 (viewY - 2*pageOrigin) / zoom，在非首页时彻底打偏、永远取不到词。
+        // 第 0 页 pageOrigin = currentOffset = 0，符号写错也看不出来，故必须用非首页回归。
+        val zoom = 1.76f
+        val pageOriginY = 3000f
+        val t = PageTransform(
+                zoom = zoom,
+                currentXOffset = 0f,
+                currentYOffset = -pageOriginY,
+                pageOffsetX = 0f,
+                pageOffsetY = pageOriginY
+        )
+
+        assertEquals(500f / zoom, t.toPageY(500f), EPS)
+        // 符号写反时 y 会是负几千点，这里再兜一层，防止断言被误改。
+        assertTrue(t.toPageY(500f) > 0f)
     }
 
     @Test
