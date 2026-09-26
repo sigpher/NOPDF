@@ -58,7 +58,9 @@ NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并�
 - 架构：手写 MVP（每个功能包包含 `XxxActivity`/`XxxFragment` + `XxxPresenter` + `I*Contract`）
 - 数据层：GreenDAO（SQLite ORM，schemaVersion 3）、`DBHelper`（DAO 访问）+ `DataManager`（内存缓存）
 - 视图绑定：Kotlin 合成视图（`kotlinx.android.synthetic`）；异步与定时：`kotlinx-coroutines`；跨组件通信：EventBus
-- 渲染：基于 [AndroidPdfViewer](https://github.com/barteksc/AndroidPdfViewer) 的本地修改分支（模块 `android-pdf-viewer`，底层使用 PdfiumAndroid）
+- 渲染：模块 `android-pdf-viewer`（[AndroidPdfViewer](https://github.com/barteksc/AndroidPdfViewer) 的本地 fork）负责 UI 与手势，底层 PDF 引擎为 **MuPDF 1.28.5**
+  - 引擎能力经 `com.github.barteksc.pdfviewer.engine.PdfEngine` 接口收敛，唯一实现是 `MupdfEngine`；其上（渲染、缩放、手势、目录树）与之下（MuPDF）互不直接依赖，因此换引擎只需改 `PdfEngines.create()`
+  - 渲染路径用引擎中立类型（`EngineDocument` / `EngineSize` / `EngineSizeF` / `EngineBookmark` / `EngineLink` / `EngineMeta` / `PasswordRequiredException`）传递，pdfium 与 MuPDF 的类型不会外泄
 - 基础组件：`com.aaron:base`（提供 `BaseActivity`/`BaseFragment`/`IContract`/`ImageLoader` 等）。该库自身的 http / webview / download / timer 能力簇（Retrofit、OkHttp、腾讯 Sonic、OkDownload、RxJava2、AutoDispose）在本项目中完全没有被引用，已在 `app/build.gradle` 中排除其传递依赖
 
 ### 模块划分
@@ -85,7 +87,35 @@ NO PDF 是一款专注于本地 PDF 阅读的 Android 应用：自动扫描并�
 
 - JDK 8
 - Android SDK（compileSdk 29，建议 Android 10 SDK）
+- Android NDK（用于编译 MuPDF 原生库，r21 起可用，实测 r27 可用）
 - 签名密钥信息写入根目录 `local.properties`
+- MuPDF 1.28.5 源码（不入库，见下）
+
+### 准备 MuPDF 原生库
+
+PDF 引擎为 MuPDF，其 Java 绑定以源码形式参与编译，原生库需预先编译。两者都不随仓库分发
+（源码树 68 MB、两个 ABI 的 `.so` 合计 18 MB）。
+
+为什么不用 Gradle 的 `externalNativeBuild`：本项目冻结在 AGP 3.4.1，而 NDK r27 采用统一
+工具链布局、**不再带 `platforms/` 目录**，AGP 3.4.1 的 NDK 集成无法识别该布局。因此改用裸
+`ndk-build` 预编译，Gradle 只把产物目录接进 `jniLibs`，全程不碰 NDK。
+
+```bash
+# 1. 获取并解压 MuPDF 1.28.5 源码（Artifex 官方发布，不入库）
+tar xzf mupdf-1.28.5-source.tar.gz
+
+# 2. 在根目录 local.properties 中补充两行
+#    ndk.dir=/path/to/android-sdk/ndk/27.x.x
+#    mupdf.dir=/path/to/mupdf-1.28.5-source
+
+# 3. 编译两个 ABI 的原生库（首次会跑 make generate 生成内置字体的 C 源码）
+sh tools/build_mupdf.sh
+```
+
+产物落在 `mupdf.dir/build/android/libs/<abi>/libmupdf_java.so`，Gradle 会自动接入。
+若 `local.properties` 缺少 `mupdf.dir`，或某个 ABI 的 `.so` 未编译，**构建会在配置阶段
+直接报错并给出上述提示**——因为 `splits.abi` 关掉了 `universalApk`，缺一个 ABI 时 AGP
+仍会产出那个 APK，只是里面没有原生库，装上后一进阅读页就崩。
 
 ### 签名配置
 
@@ -121,12 +151,12 @@ Release 使用 `splits.abi` 按 ABI 拆分，`assembleRelease` 会输出两个�
 
 | APK | ABI | 体积 | 适用设备 |
 | --- | --- | --- | --- |
-| `app/build/outputs/apk/release/app-arm64-v8a-release.apk` | `arm64-v8a` | 约 5.9 MB | 绝大多数现代 64 位机型 |
-| `app/build/outputs/apk/release/app-armeabi-v7a-release.apk` | `armeabi-v7a` | 约 5.7 MB | 老旧的 32 位机型 |
+| `app/build/outputs/apk/release/app-arm64-v8a-release.apk` | `arm64-v8a` | 约 8.1 MB | 绝大多数现代 64 位机型 |
+| `app/build/outputs/apk/release/app-armeabi-v7a-release.apk` | `armeabi-v7a` | 约 7.3 MB | 老旧的 32 位机型 |
 
 - 不再产出同时含两个 ABI 的通用包（`universalApk false`），`armeabi`(ARMv5)、`x86`、`x86_64` 均不产出。
 - 两个 APK 使用**同一签名与同一 versionCode**，安装时按设备 ABI 选择对应包即可；换装另一个 ABI 的包不影响数据（签名一致）。
-- 拆包前后对比：原来的通用包 9,116,313 B，拆分后每包约少 3 MB，主要省下的是 pdfium 的另一份 native 库。
+- 每个 APK 只含一个 native 库：`libmupdf_java.so`。
 
 ### 其他构建要点
 
@@ -141,7 +171,7 @@ Release 使用 `splits.abi` 按 ABI 拆分，`assembleRelease` 会输出两个�
 | 库 | 作者 | 用途 |
 | --- | --- | --- |
 | AndroidPdfViewer | barteksc | PDF 渲染视图（本地 fork） |
-| PdfiumAndroid | barteksc | PDF 解析渲染引擎 |
+| MuPDF | Artifex | PDF 解析渲染引擎（替代 PdfiumAndroid） |
 | RealtimeBlurView | mmin18 | 实时模糊背景 |
 | ParallaxBackLayout | anzewei | 滑动返回 |
 | greenDAO | greenrobot | SQLite ORM |
@@ -161,7 +191,8 @@ Release 使用 `splits.abi` 按 ABI 拆分，`assembleRelease` 会输出两个�
 - 无深色模式（固定使用 `Theme.AppCompat.Light`）
 - 单元测试覆盖有限：目前仅目录树展开/折叠（`ContentTreeTest`）与分组封面构建（`CoverBuilderTest`）有纯 JVM 回归测试；数据库迁移、备份/还原等高风险逻辑尚无自动化回归
 - **0.2.0 起移除了「选词查词」（长按英文单词查词典）功能**，同时移除了 PDFBox 及其传递依赖 BouncyCastle 以缩减包体。若需要该功能，请在 issue 中反馈
-- 受 pdfium 1.9.0 的 Java 层没有文本 API 所限，本应用不提供取字类能力（选词、复制、全文搜索）
+- 换用 MuPDF 后包体变大：`arm64-v8a` 约 5.9 MB → 8.1 MB，`armeabi-v7a` 约 5.7 MB → 7.3 MB。MuPDF 的 `.so` 内含完整的排版与字体栈，而 pdfium 1.9.0 裁剪得更激进。若体积敏感，可考虑在 `tools/build_mupdf.sh` 的 `APP_OPTIM` 基础上追加 `MUPDF_EXTRA_CFLAGS` 关掉用不到的子系统（MuPDF 默认打包了 mujs、extract、cmarkgfm、openjpeg 等本应用完全不用的组件）
+- **换引擎未经真机渲染验证**：MuPDF 具备取字能力（`Page.toStructuredText()`、全文搜索等），但本项目尚未启用；此外现有的 16 个单元测试**检测不到换引擎带来的渲染回归**（`ContentTree` 刻意不依赖引擎类型），升级前请手动核对渲染效果
 
 ## 贡献与反馈
 
@@ -171,6 +202,24 @@ Release 使用 `splits.abi` 按 ABI 拆分，`assembleRelease` 会输出两个�
 
 ## 许可证
 
-[Apache License 2.0](LICENSE)
+[GNU Affero General Public License v3.0](LICENSE)
 
-本项目基于 [YESPDF](https://github.com/aaronzzx/YESPDF) 修改而来，沿用上游的 Apache License 2.0 许可证。
+本项目基于 [YESPDF](https://github.com/aaronzzx/YESPDF) 修改而来。YESPDF 及其上游
+[AndroidPdfViewer](https://github.com/barteksc/AndroidPdfViewer) 原为 Apache License 2.0；
+自本项目改用 [MuPDF](https://mupdf.com/) 作为 PDF 引擎起，整体许可变更为 AGPL-3.0。
+
+原因：MuPDF 采用 AGPL-3.0（源码树中的 `COPYING`），且 MuPDF 官方未发布 Android 预编译
+产物，本项目自行编译其 `libmupdf_java.so` 并随应用分发。AGPL 的第 13 条要求向通过网络
+使用本程序的用户提供对应源码，本应用不提供网络服务，故该条不适用；但**分发应用本身
+即构成「携带」**，必须按 AGPL 提供完整对应源码。
+
+### 第三方组件
+
+| 组件 | 许可 | 用途 |
+| --- | --- | --- |
+| [MuPDF](https://mupdf.com/) 1.28.5 | AGPL-3.0 | PDF 解析与渲染引擎（`libmupdf_java.so`） |
+| MuPDF 内置的 Noto / Source Han 字体 | OFL-1.1 / 各自许可 | CJK 及多语言文字渲染所需的嵌入字体 |
+| AndroidPdfViewer（`android-pdf-viewer/`） | Apache-2.0 | 阅读器 UI 与手势/缩放逻辑 |
+
+MuPDF 源码不随本仓库分发，需自行获取后按 `tools/build_mupdf.sh` 的说明编译。详见
+[构建说明](#构建)。

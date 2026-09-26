@@ -14,16 +14,96 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 - `jcenter()` / `dl.bintray.com` are still listed in the root `build.gradle` but are dead. `mavenCentral()` + `maven.aliyun.com/repository/public` mirrors are present in both `buildscript` and `allprojects`, so deps (incl. Umeng) do resolve. README also claims a `plugins.gradle.org/m2` mirror — it is **not** in any build file. Trust the build files over the README.
 - Release mapping lands in `app/build/outputs/mapping/release/mapping.txt` (AGP writes it from the `-verbose` flag). Do **not** re-add `-printmapping` — `app/proguard-rules.pro:108` explains it dirties the worktree. `proguardMapping.txt` is gitignored.
 - Debug variant: `applicationId` + `.dev`, icon/label swapped via `manifestPlaceholders` (`app_icon`, `app_name`). Release uses `app_ic_launcher` / `app_name_en`. Because `AppConfig.AUTHORITY` is `BuildConfig.APPLICATION_ID + ".fileprovider"`, the FileProvider authority differs per variant (`…nopdf.dev.fileprovider` in debug) — don't hardcode it.
-- `android-pdf-viewer` is a **deliberately patched** fork, not vanilla: `PDFView` exposes `MutableLiveData` (hence the explicit `api androidx.lifecycle:lifecycle-livedata-core`), and `core-ktx` is pinned to `1.3.0` because a dynamic `+` resolved to a class-file version AGP 3.4.1's Jetifier could not process. Keep it pinned. Its bintray block is dead — ignore it.
-- **pdfium 没有文本 API，所以「取字」类功能目前一律没有实现。** `com.github.barteksc:pdfium-android:1.9.0`
-  的 Java 层完全没有取字能力（无 `TextPage` / `loadTextPage` / `getTextBounded`），而 1.9.0 已是该
-  坐标下的最新版本，无法通过升级获得。其 `libmodpdfium.so` 虽导出了 `FPDFText_*`（含
-  `FPDFText_GetCharIndexAtPos`），但 `libjniPdfium.so` 未做 JNI 绑定。历史上曾引入
-  `com.tom-roush:pdfbox-android` 做「选词查词」，但该功能已在 0.2.0 整体移除，**PDFBox 依赖
-  及其传递依赖 BouncyCastle 也已一并删除**（同时省掉了 fontbox 的 cmap 资源与约 1MB dex）。
-  若日后要做选词 / 全文搜索 / 复制，两条路：给 fork 的 `libjniPdfium.so` 补 `FPDFText_*` 绑定
-  （最干净，且能复用 pdfium 已打开的句柄），或重新引入 PDFBox（代价是与 pdfium 重复解析同一份文件）。
+- `android-pdf-viewer` is a **deliberately patched** fork, not vanilla: `PDFView` exposes `MutableLiveData` (hence the explicit `api androidx.lifecycle:lifecycle-livedata-core`), and `core-ktx` is pinned to `1.3.0` because a dynamic `+` resolved to a class-file version AGP 3.4.1's Jetifier could not process. Keep it pinned. Its bintray block is dead — ignore it. PDF rendering itself now goes through the local `engine/` abstraction onto MuPDF — see the rendering-engine section above.
+- **「取字」类功能（选词 / 复制 / 全文搜索）目前仍未实现，但这不再是引擎的限制。** 历史上受限于
+  pdfium：`com.github.barteksc:pdfium-android:1.9.0` 的 Java 层完全没有取字能力（无 `TextPage` /
+  `loadTextPage` / `getTextBounded`），其 `libmodpdfium.so` 虽导出 `FPDFText_*`（含
+  `FPDFText_GetCharIndexAtPos`）但 `libjniPdfium.so` 未做 JNI 绑定。曾引入
+  `com.tom-roush:pdfbox-android` 做「选词查词」，该功能在 0.2.0 整体移除，**PDFBox 依赖及其传递
+  依赖 BouncyCastle 也已一并删除**（省掉 fontbox 的 cmap 资源与约 1MB dex）。
+  **换成 MuPDF 后这个障碍消失了**：绑定层直接提供 `Page.toStructuredText()`、`StructuredText` /
+  `TextWalker` / `Text`、`Page.search()`、`textAsHtml()`。要做选词/搜索时，在 `PdfEngine` 上加取字
+  方法、由 `MupdfEngine` 转发即可——抽象层已经是为此准备的。
 - `com.blankj:utilcode` (`SPStaticUtils`, `PathUtils`, `StringUtils`, `FileUtils`, `GsonUtils`, …) is used across ~32 files but **never declared** — it arrives transitively via `com.aaron:base`. Be careful when touching the `exclude` block at `app/build.gradle:121-128`.
+
+## 渲染引擎：MuPDF（不再是 pdfium）
+
+**引擎层已收敛为 `com.github.barteksc.pdfviewer.engine.PdfEngine`**，位于 fork 模块
+`android-pdf-viewer/src/main/java/.../engine/`：
+
+| 文件 | 作用 |
+| --- | --- |
+| `PdfEngine.java` | 引擎面：打开/关闭文档、页数、页尺寸、渲染、元数据、目录树、页面链接、坐标映射 |
+| `MupdfEngine.java` | **唯一的实现**，对接 MuPDF 1.28.5 |
+| `PdfEngines.java` | 工厂，`create(Context)` 是**唯一**决定用哪个引擎的地方 |
+| `EngineDocument` / `EngineSize` / `EngineSizeF` / `EngineBookmark` / `EngineLink` / `EngineMeta` | 引擎中立的值类型，形状对齐原 pdfium 对应类型，因此换引擎是纯改名 |
+| `PasswordRequiredException` | 密码错误/缺失的统一表示，替代 pdfium 的 `PdfPasswordException` |
+
+**`com.shockwave.*` 已从代码与依赖中彻底移除**（`pdfium-android:1.9.0` 依赖已删，`PdfiumEngine`
+已删）。规则：引擎面之上不得出现任何引擎专有类型。
+
+### pdfium → MuPDF 的四处语义差异（不是改名，改前必读）
+
+1. **页生命周期**：MuPDF 每次 `Document.loadPage(i)` 都**新分配**一个 `Page`，而 pdfium 模型是
+   「open 一次、反复 render」。`MupdfEngine` 用 `MuDoc.pages`（`SparseArray<Page>`）缓存桥接，
+   由 `closeDocument` 统一 `destroy()`。`PdfFile` 的 `openedPages` 与 part 缓存（按张数计）
+   仍是上层的驻留上限，引擎自身不淘汰。
+2. **局部渲染**：`AndroidDrawDevice` 要的是**设备空间** patch（`bbox = xOrigin+patchX0 …`），
+   不是 pdfium 的页空间子矩形。`MupdfEngine.renderPageBitmap` 改用 CTM 表达：按
+   `scale = min(bw/regionW, bh/regionH)` 缩放，再平移使区域左上角落在 bitmap 原点。
+   缩放/分块渲染的坐标语义依赖于此，**改这里会直接导致画面错位**。
+3. **密码**：MuPDF 用返回值而非异常（`needsPassword()` + `authenticatePassword()`），
+   在 `finishOpen` 里翻译成 `PasswordRequiredException`，以保持
+   `loadError → onError → showError` 链路与 `PreviewActivity` 的 `is` 判断不变。
+4. **目录树**：MuPDF 的 `Outline` **不携带页码**，只有 `title` + 目标 `uri`。页码要靠
+   `document.resolveLinkDestination(outline)` 拿到 `LinkDestination`（它继承 `Location`，
+   有 `chapter`/`page`），再按 `chapter` 累加 `countPages(c)` 换算成扁平页号。解析不出来的
+   记为 0（保留节点而非丢弃）。MuPDF 直接给树，app 侧 `ContentTree` 继续消费即可。
+
+`MupdfEngine` 另有两处适配：`ParcelFileDescriptor` 需包成 `SeekableInputStream`（MuPDF 无 fd
+入口；自带 `FitzInputStream` 构造器是 private，用不了，自实现那 3 个方法，且避免整份 PDF 读进
+内存）；`minSdk` 与 `APP_PLATFORM` 均为 21（fork 原先声明 16，已同步改为 21）。
+
+### 构建 MuPDF：为什么必须用裸 ndk-build
+
+**`externalNativeBuild` 在本项目不可用**：AGP 3.4.1（2019）早于 NDK 统一工具链改造，
+NDK r27 **不再带 `platforms/` 目录**，AGP 3.4.1 的 NDK 集成无法识别该布局。反方向走
+（装带 `platforms/` 的旧 NDK）也不行——MuPDF 1.28.5 需要现代 clang。
+
+因此 `tools/build_mupdf.sh` 用裸 `ndk-build` 预编译，Gradle 只把 `libs` 目录接进
+`jniLibs.srcDirs`，**全程不碰 NDK**。Java 绑定（64 个 `com.artifex.mupdf.fitz` 类）以
+`java.srcDirs` 参与编译。
+
+**两者都不入库**（源码树 68 MB、`.so` 合计 18 MB），路径写在 `local.properties` 的
+`mupdf.dir` / `ndk.dir`（该文件本就是构建必需项，不额外增加克隆负担）。
+`android-pdf-viewer/build.gradle` 在**配置阶段**校验 `mupdf.dir` 存在且两个 ABI 的 `.so`
+都已编译，缺失即报错——因为 `splits.abi` 关了 `universalApk`，缺一个 ABI 时 AGP 仍会产出
+那个 APK，只是里面没有原生库，装上一进阅读页就 `UnsatisfiedLinkError`。
+
+`ndk-build` 不读环境变量，`APP_BUILD_SCRIPT` / `APP_PLATFORM` / `APP_ABI` 必须作为
+**make 参数**传入。首次编译前需 `make generate` 生成内置字体的 C 源码（脚本会自动做）。
+
+### 许可：AGPL-3.0
+
+MuPDF 是 AGPL-3.0，且官方未发布 Android 预编译产物，本项目自行编译并随应用分发，
+因此仓库 `LICENSE` 已从 Apache-2.0 改为 AGPL-3.0。**AGPL 第 13 条（网络使用）不适用**
+（本应用不提供网络服务），但**分发即构成「携带」，必须提供完整对应源码**——发布时别忘了。
+
+### 包体
+
+| ABI | pdfium（旧） | MuPDF（新） | 增量 |
+| --- | --- | --- | --- |
+| `arm64-v8a` | 6,142,542 B | 8,517,261 B | +2,374,719 B（+38.7%） |
+| `armeabi-v7a` | 6,003,851 B | 7,660,782 B | +1,656,931 B（+27.6%） |
+
+压缩后 `lib/`：arm64 5,492,229 B / v7a 4,635,758 B。MuPDF 的 `.so` 压缩比约 0.51，
+比 pdfium 的 0.44 略差（CJK 字体数据本身不易压缩）。
+
+仍有回收空间：MuPDF 默认打包了 mujs（JS 引擎）、extract、cmarkgfm（markdown）、
+openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CFLAGS` 关掉。
+
+**换引擎未经真机渲染验证**。且现有 16 个测试**检测不到渲染回归**——`ContentTree` 刻意不依赖
+引擎类型。升级前请手动核对渲染效果。
 
 ## 性能与稳定性（已修 / 仍存在）
 

@@ -66,3 +66,7 @@ fastlane/Preview.html
 fastlane/screenshots
 fastlane/test_output
 fastlane/readme.md
+
+# MuPDF 源码与预编译产物（体积大，按 README「准备 MuPDF 原生库」自行获取并编译）
+mupdf-*-source.tar.gz
+mupdf-*/build/

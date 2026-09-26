@@ -4,9 +4,8 @@ package com.github.barteksc.pdfviewer.engine;
  * Engine-neutral handle for an opened document.
  *
  * <p>The payload is opaque to every caller above the engine boundary: it is whatever the
- * concrete {@link PdfEngine} produced (currently a {@code com.shockwave.pdfium.PdfDocument},
- * later a {@code com.artifex.mupdf.fitz.Document}). Callers must only pass it back to the
- * same engine instance that created it.
+ * concrete {@link PdfEngine} produced (a MuPDF document plus its per-document page cache).
+ * Callers must only pass it back to the same engine instance that created it.
  */
 public final class EngineDocument {
 

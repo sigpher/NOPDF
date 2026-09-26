@@ -1,7 +1,7 @@
 package com.github.barteksc.pdfviewer.engine;
 
 /**
- * Engine-neutral float size, mirroring {@code com.shockwave.pdfium.util.SizeF}.
+ * Engine-neutral size in fractional units, as page sizes are measured for layout.
  */
 public class EngineSizeF {
 

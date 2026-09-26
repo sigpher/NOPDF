@@ -21,26 +21,79 @@ ext {
     developerName = 'Bartosz Schiller'
     developerEmail = 'barteksch@boo.pl'
 
-    licenseName = 'The Apache Software License, Version 2.0'
-    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-    allLicenses = ["Apache-2.0"]
+    // 本 fork 自身源自 ApachePdfViewer（Apache-2.0）。但应用整体因引入 MuPDF（AGPL-3.0）
+    // 而采用 AGPL-3.0，故此处同步声明，避免发布元数据与仓库 LICENSE 不一致。
+    licenseName = 'The GNU Affero General Public License, Version 3.0'
+    licenseUrl = 'https://www.gnu.org/licenses/agpl-3.0.txt'
+    allLicenses = ["AGPL-3.0"]
+}
+
+// ── MuPDF 接入 ────────────────────────────────────────────────────────────────
+// 本项目用 MuPDF 1.28.5 代替 pdfium 渲染。MuPDF 的 Java 绑定直接以源码形式参与编译，
+// 原生库则由 tools/build_mupdf.sh 用裸 ndk-build 预编译（因为冻结在 AGP 3.4.1，其
+// NDK 集成无法识别 NDK r27 的统一工具链布局）。
+//
+// 两者都不入库：源码树 68 MB，产物两个 ABI 合计 18 MB。路径由 local.properties 的
+// mupdf.dir 指定——与本项目本就必需的 local.properties 是同一个文件，不额外增加克隆负担。
+
+def mupdfProps = new Properties()
+def repoLocalProps = file("${rootProject.projectDir}/local.properties")
+if (repoLocalProps.exists()) {
+    repoLocalProps.withInputStream { mupdfProps.load(it) }
+}
+
+def mupdfSetupHint = "\n\nMuPDF 准备步骤：\n" +
+        "  1. 解压 MuPDF 1.28.5 源码到任意目录\n" +
+        "  2. 在 local.properties 加一行  mupdf.dir=/绝对路径/mupdf-1.28.5-source\n" +
+        "  3. 运行  sh tools/build_mupdf.sh"
+
+def mupdfDir = mupdfProps.getProperty('mupdf.dir')
+if (!mupdfDir) {
+    throw new GradleException("local.properties 里缺少 mupdf.dir。${mupdfSetupHint}")
+}
+
+def mupdfLibsDir = file("$mupdfDir/build/android/libs")
+
+// app 侧 splits.abi 关掉了 universalApk，若某个 ABI 的 .so 缺失，AGP 仍会照常产出那个
+// APK，只是里面没有 native 库，装上一进阅读页就 UnsatisfiedLinkError。所以在这里就把
+// 缺失的 ABI 报出来，而不是留到运行时。
+def requiredAbis = ['arm64-v8a', 'armeabi-v7a']
+def missingAbis = requiredAbis.findAll { abi ->
+    !file("$mupdfLibsDir/$abi/libmupdf_java.so").exists()
+}
+if (missingAbis) {
+    throw new GradleException("MuPDF 原生库缺失：${missingAbis.join('、')}/libmupdf_java.so" +
+            "（在 ${mupdfLibsDir}）。${mupdfSetupHint}")
 }
 
 android {
     compileSdkVersion 29
 
     defaultConfig {
-        minSdkVersion 16
+        // 原为 16，但 MuPDF 的 .so 是按 APP_PLATFORM=android-21 编的（见 tools/build_mupdf.sh，
+        // 与 app 的 minSdkVersion 21 对齐）。声明 16 会让 minSdk 更低的宿主应用装上后
+        // 直到运行时才 UnsatisfiedLinkError，故同步提到 21。
+        minSdkVersion 21
         targetSdkVersion 29
         versionCode 1
         versionName "3.2.0-beta.1"
     }
 
+    sourceSets {
+        main {
+            // MuPDF 的 64 个 com.artifex.mupdf.fitz 绑定类
+            java.srcDirs += "$mupdfDir/platform/java/src"
+            // 上面校验过的预编译产物
+            jniLibs.srcDirs += mupdfLibsDir
+        }
+    }
 }
 
 dependencies {
     implementation 'com.android.support:support-compat:28.0.0'
-    api 'com.github.barteksc:pdfium-android:1.9.0'
+    // 原先依赖 com.github.barteksc:pdfium-android:1.9.0 渲染，已被 MuPDF 取代，
+    // 该依赖连同其 5 个 .so 全部移除（单 arm64 就省下约 7 MB）。
+    //
     // PDFView 对外暴露了 MutableLiveData（本地改动），因此显式声明而非依赖传递（原先靠 com.aaron:base 带入）
     api 'androidx.lifecycle:lifecycle-livedata-core:2.0.0'
     // 原为 "androidx.core:core-ktx:+"（动态版本），会解析到最新 androidx，

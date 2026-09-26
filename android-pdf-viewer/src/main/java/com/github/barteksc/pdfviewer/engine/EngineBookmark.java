@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Engine-neutral table-of-contents entry, mirroring {@code com.shockwave.pdfium.PdfDocument.Bookmark}.
+ * Engine-neutral table-of-contents entry.
  *
  * <p>Deliberately a snapshot rather than a view onto a native object: the tree is read once,
  * at load time, and must stay valid after the underlying page/document handle is released.

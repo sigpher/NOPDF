@@ -14,9 +14,9 @@ import java.util.List;
  *
  * <p>Everything above this interface — {@code PdfFile}, {@code PDFView}, the
  * {@code DocumentSource} hierarchy, and the app module — is written against these types
- * only. No {@code com.shockwave.*} type may appear in a signature above this line; that is
- * the whole point of the boundary, so that the engine can be swapped without the renderer,
- * the gesture/zoom code, or the app having to change.
+ * only. No engine-specific type may appear in a signature above this line; that is the whole
+ * point of the boundary, so that the engine can be swapped without the renderer, the
+ * gesture/zoom code, or the app having to change.
  *
  * <p>Implementations are not required to be thread-safe; callers serialise access where the
  * original pdfium-backed code did.

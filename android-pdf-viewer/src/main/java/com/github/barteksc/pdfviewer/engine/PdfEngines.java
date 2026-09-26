@@ -15,6 +15,6 @@ public final class PdfEngines {
     }
 
     public static PdfEngine create(Context context) {
-        return new PdfiumEngine(context.getApplicationContext());
+        return new MupdfEngine(context.getApplicationContext());
     }
 }

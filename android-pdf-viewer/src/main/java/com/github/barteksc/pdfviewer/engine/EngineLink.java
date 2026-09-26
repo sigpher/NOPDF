@@ -3,7 +3,8 @@ package com.github.barteksc.pdfviewer.engine;
 import android.graphics.RectF;
 
 /**
- * Engine-neutral link annotation, mirroring {@code com.shockwave.pdfium.PdfDocument.Link}.
+ * Engine-neutral link annotation: a rectangle on the page plus, at most, an internal
+ * destination page and an external URI.
  */
 public class EngineLink {
 

@@ -1,7 +1,8 @@
 package com.github.barteksc.pdfviewer.engine;
 
 /**
- * Engine-neutral document metadata, mirroring {@code com.shockwave.pdfium.PdfDocument.Meta}.
+ * Engine-neutral document information-dictionary fields. Any of them may be null when the
+ * document does not carry them.
  */
 public class EngineMeta {
 
