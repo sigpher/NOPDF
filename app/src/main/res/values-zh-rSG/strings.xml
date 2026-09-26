@@ -125,6 +125,7 @@
     <!-- 设置项 -->
     <string name="app_color_reverse">顔色反轉</string>
     <string name="app_volume_control">音量鍵翻頁</string>
+    <string name="app_page_spacing">頁面間隔（縱向閱讀）</string>
 
     <string-array name="max_recent_count" tools:ignore="ResourceName">
         <item>3</item>

@@ -19,6 +19,11 @@ import com.blankj.utilcode.util.ConvertUtils
 import kotlinx.android.synthetic.main.app_recycler_item_settings_recent_count.view.*
 import kotlinx.android.synthetic.main.app_recycler_item_settings_seekbar.view.*
 import kotlinx.android.synthetic.main.app_recycler_item_settings_switch.view.*
+// app_tv_title / app_tv_count / app_spinner 在 switch、recent_count、page_spacing 三个 item 布局里
+// 刻意复用同名 id：这样 MaxRecentHolder 与 PageSpacingHolder 能共用一段绑定逻辑。代价是星号
+// 导入这些名字时会产生重载歧义，必须用显式导入（优先级高于星号）把它定到其中一个布局。
+// 合成视图最终都是对同一个 id 做 findViewById，且这几个 id 在各布局里类型一致，定到哪个都一样，
+// 因此这里不再导入 page_spacing，直接用 recent_count 的同名合成属性即可。
 import kotlinx.android.synthetic.main.app_recycler_item_settings_switch.view.app_tv_title
 import org.greenrobot.eventbus.EventBus
 
@@ -29,6 +34,7 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
 
     private val maxRecentEvent: MaxRecentEvent = MaxRecentEvent()
     private val maxRecentCounts: List<String>
+    private val pageSpacings: List<String>
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val context = parent.context
@@ -53,6 +59,22 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
                     holder.itemView.app_tv_count.text = maxRecentCount
                     Settings.maxRecentCount = maxRecentCount
                     EventBus.getDefault().post(maxRecentEvent)
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+            return holder
+        } else if (viewType == TYPE_PAGE_SPACING) {
+            val itemView = inflater.inflate(R.layout.app_recycler_item_settings_page_spacing, parent, false)
+            val holder = PageSpacingHolder(itemView)
+            holder.itemView.setOnClickListener { holder.itemView.app_spinner.performClick() }
+            holder.itemView.app_spinner.dropDownHorizontalOffset = -ConvertUtils.dp2px(46f)
+            holder.itemView.app_spinner.onItemSelectedListener = object : OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View, position: Int, id: Long) {
+                    val spacing = pageSpacings.getOrNull(position)?.toIntOrNull() ?: return
+                    Settings.pageSpacing = spacing
+                    holder.itemView.app_tv_count.text =
+                            context.getString(R.string.app_page_spacing_value, spacing)
                 }
 
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -140,6 +162,15 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
                 viewHolder.itemView.app_tv_count.text = Settings.maxRecentCount
                 viewHolder.itemView.app_spinner.setSelection(maxRecentCounts.indexOf(Settings.maxRecentCount))
             }
+            is PageSpacingHolder -> {
+                viewHolder.itemView.app_tv_title.setText(R.string.app_page_spacing)
+                val spacing = Settings.pageSpacing
+                viewHolder.itemView.app_tv_count.text =
+                        viewHolder.itemView.context.getString(R.string.app_page_spacing_value, spacing)
+                // 旧版本可能存过不在候选表里的值，indexOf 为 -1 时退回第一项，避免 Spinner 空白。
+                viewHolder.itemView.app_spinner.setSelection(
+                        pageSpacings.indexOf(spacing.toString()).coerceAtLeast(0))
+            }
         }
     }
 
@@ -148,6 +179,8 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
             return TYPE_SEEKBAR
         } else if (position == POS_NUM_PICKER) {
             return TYPE_NUM_PICKER
+        } else if (position == POS_PAGE_SPACING) {
+            return TYPE_PAGE_SPACING
         }
         return TYPE_SWITCH
     }
@@ -180,12 +213,21 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
         }
     }
 
+    internal class PageSpacingHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        init {
+            val mlp = itemView.layoutParams as MarginLayoutParams
+            mlp.topMargin = ConvertUtils.dp2px(0.6f)
+            itemView.layoutParams = mlp
+        }
+    }
+
     companion object {
-        private const val ITEM_COUNT = 10
+        private const val ITEM_COUNT = 11
 
         private const val TYPE_SWITCH = 0
         private const val TYPE_SEEKBAR = 1
         private const val TYPE_NUM_PICKER = 2
+        private const val TYPE_PAGE_SPACING = 3
 
         private const val POS_VOLUME_CONTROL = 0
         private const val POS_CLICK_FLIP_PAGE = 1
@@ -197,10 +239,13 @@ internal class SettingsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
         private const val POS_HIDE_SCROLL_LEVEL_BAR = 7
         private const val POS_NUM_PICKER = 8
         private const val POS_SCROLL_LEVEL = 9
+        private const val POS_PAGE_SPACING = 10
     }
 
     init {
         val array = App.getContext().resources.getStringArray(R.array.max_recent_count)
         maxRecentCounts = listOf(*array)
+        val spacingArray = App.getContext().resources.getStringArray(R.array.page_spacing)
+        pageSpacings = listOf(*spacingArray)
     }
 }

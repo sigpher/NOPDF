@@ -130,7 +130,8 @@
     <!-- 设置项 -->
     <string name="app_color_reverse">Color Inversion</string>
     <string name="app_volume_control">Volume keys to turn pages</string>
-
+    <string name="app_page_spacing">Page Spacing (vertical reading)</string>
+    <string name="app_page_spacing_value" translatable="false">%d dp</string>
 
     <string-array name="max_recent_count" tools:ignore="ResourceName">
         <item>3</item>
@@ -139,6 +140,16 @@
         <item>12</item>
         <item>15</item>
         <item>Unlimited</item>
+    </string-array>
+
+    <!-- 纵向阅读的页面间隔候选值（单位 dp）。纯数值，与语言无关。 -->
+    <string-array name="page_spacing" translatable="false">
+        <item>0</item>
+        <item>4</item>
+        <item>8</item>
+        <item>12</item>
+        <item>16</item>
+        <item>24</item>
     </string-array>
 
     <string name="app_backup_item_count_preview">16 books</string>

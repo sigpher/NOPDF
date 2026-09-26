@@ -25,6 +25,7 @@ object Settings {
     private const val SP_FIRST_CREATE_SHORTCUT = "SP_FIRST_CREATE_SHORTCUT"
     private const val SP_GLOBAL_GREY = "SP_GLOBAL_GREY"
     private const val SP_HIDE_SCROLL_LEVEL_BAR = "SP_HIDE_SCROLL_LEVEL_BAR"
+    private const val SP_PAGE_SPACING = "SP_PAGE_SPACING"
 
     var lockLandscape: Boolean
         get() = SPStaticUtils.getBoolean(SP_LOCK_LANDSCAPE, false)
@@ -100,4 +101,14 @@ object Settings {
     var hideScrollLevelBar: Boolean
         get() = SPStaticUtils.getBoolean(SP_HIDE_SCROLL_LEVEL_BAR, false)
         set(value) = SPStaticUtils.put(SP_HIDE_SCROLL_LEVEL_BAR, value)
+
+    /**
+     * 纵向阅读时相邻页之间的间隔（单位 dp）。默认 0，即保持原来的紧密排版。
+     *
+     * 只作用于竖向滚动：横向阅读走 pageFling/pageSnap 的整页翻页，间距没有意义，
+     * 因此 [PreviewActivity] 仅在 `!swipeHorizontal` 时把它传给 PDFView.spacing()。
+     */
+    var pageSpacing: Int
+        get() = SPStaticUtils.getInt(SP_PAGE_SPACING, 0)
+        set(value) = SPStaticUtils.put(SP_PAGE_SPACING, value.coerceAtLeast(0))
 }

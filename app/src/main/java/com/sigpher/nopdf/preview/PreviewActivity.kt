@@ -192,6 +192,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         BitmapFactory.decodeResource(resources, R.drawable.app_img_bookmark)
     }
     private var pageWidth = 0F
+    /** 本次加载实际使用的页间距（dp），用于从设置页返回后判断是否需要重新载入。 */
+    private var appliedPageSpacing = -1
     //endregion
 
     //region Lifecycle
@@ -353,6 +355,10 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_CODE_SETTINGS) {
             isVolumeControl = Settings.volumeControl
+            // 页间距是 PDFView 的加载期参数，改了必须重新载入文档才会生效（与切换阅读方式同一条路径）。
+            if (!Settings.swipeHorizontal && appliedPageSpacing != Settings.pageSpacing) {
+                initPdf(uri, pdf)
+            }
         }
     }
     //endregion
@@ -1070,6 +1076,8 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
         if (password != null) {
             configurator = configurator.password(password)
         }
+        // 记下本次实际应用的页间距，从设置页返回时据此判断要不要重新载入文档。
+        appliedPageSpacing = Settings.pageSpacing
         // 没有长按的消费者，关掉 GestureDetector 的长按识别。
         configurator
                 .disableLongpress()
@@ -1078,7 +1086,11 @@ class PreviewActivity : CommonActivity(), IActivityInterface, View.OnClickListen
                 .pageFling(Settings.swipeHorizontal)
                 .pageSnap(Settings.swipeHorizontal)
                 .enableDoubletap(false)
-                .fitEachPage(true) // .spacing(ConvertUtils.dp2px(4))
+                .fitEachPage(true)
+                // 纵向阅读的相邻页间隔。横向阅读走 pageFling/pageSnap 的整页翻页，间距没有意义。
+                // spacing 是加载期参数，改动后需要重新载入文档（见 onActivityResult）。
+                .spacing(if (Settings.swipeHorizontal) 0
+                else ConvertUtils.dp2px(Settings.pageSpacing.toFloat()))
                 .onError { throwable: Throwable ->
                     LogUtils.e(throwable.message)
                     showError(throwable)
