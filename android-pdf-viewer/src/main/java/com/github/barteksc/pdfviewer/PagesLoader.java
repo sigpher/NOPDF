@@ -18,6 +18,7 @@ package com.github.barteksc.pdfviewer;
 import android.graphics.RectF;
 
 import com.github.barteksc.pdfviewer.util.Constants;
+import com.github.barteksc.pdfviewer.util.Diag;
 import com.github.barteksc.pdfviewer.util.MathUtils;
 import com.github.barteksc.pdfviewer.util.RenderSchedule;
 import com.github.barteksc.pdfviewer.util.RenderSchedule.Request;
@@ -113,6 +114,15 @@ class PagesLoader {
         final float partWidth = (Constants.PART_SIZE * ratioX) / pdfView.getZoom();
         grid.rows = MathUtils.ceil(1f / partHeight);
         grid.cols = MathUtils.ceil(1f / partWidth);
+        // 诊断：rows/cols 为 0 会让 calculatePartSize 得到 Infinity/0，随后 collectCells 里
+        // 「renderWidth <= 0」把每一格都跳过 —— 那一页一个任务都不会排进去，表现就是整屏空白。
+        // 正常页面的 size 不会是 0，所以这里若触发说明页尺寸在某次取用中算错了，必须看见。
+        if (grid.rows <= 0 || grid.cols <= 0 || size.getWidth() <= 0 || size.getHeight() <= 0) {
+            Diag.log("GRID-ANOMALY page=" + pageIndex
+                    + " size=" + Diag.f(size.getWidth()) + "x" + Diag.f(size.getHeight())
+                    + " rows=" + grid.rows + " cols=" + grid.cols
+                    + " zoom=" + Diag.f(pdfView.getZoom()));
+        }
     }
 
     private void calculatePartSize(GridSize grid) {
@@ -242,6 +252,17 @@ class PagesLoader {
 
         List<RenderRange> rangeList = getRenderRangeList(firstXOffset, firstYOffset, lastXOffset, lastYOffset);
         if (rangeList.isEmpty()) {
+            // 诊断：rangeList 为空就直接 return，本轮一个任务都不排 —— 整屏因此什么都不画。
+            // getRenderRangeList 的循环是「for (page = firstPage; page <= lastPage; page++)」，
+            // 所以只有 firstPage > lastPage 时才会空。offsets 与 pages 一并记下来，才能判断是
+            // 几何算错了还是页面范围本身就没覆盖到屏幕。
+            if (Diag.due("load-norange", 1000)) {
+                Diag.log("LOAD-NORANGE xOff=" + Diag.f(xOffset) + " yOff=" + Diag.f(yOffset)
+                        + " zoom=" + Diag.f(pdfView.getZoom())
+                        + " view=" + pdfView.getWidth() + "x" + pdfView.getHeight()
+                        + " firstOff=" + Diag.f(firstYOffset) + " lastOff=" + Diag.f(lastYOffset)
+                        + " pages=" + pdfView.pdfFile.getPagesCount());
+            }
             return;
         }
 
@@ -268,6 +289,25 @@ class PagesLoader {
             pdfView.renderingHandler.addRenderingTask(cell.page, cell.renderWidth, cell.renderHeight,
                     cell.bounds, cell.thumbnail, cacheOrder, pdfView.isBestQuality(),
                     pdfView.isAnnotationRendering());
+        }
+
+        // 诊断：本轮「收集到多少」与「实际排进队列多少」必须同时可见。两者差得远，说明预算或排序
+        // 在饿死真正要画的东西；collected=0 则说明缓存认为屏内每一格都已经在里面了。
+        if (Diag.due("load", 400)) {
+            int thumbs = 0;
+            for (int i = 0; i < requests.size(); i++) {
+                if (requests.get(i).thumbnail) {
+                    thumbs++;
+                }
+            }
+            Diag.log("LOAD ranges=" + rangeList.size()
+                    + " page=" + rangeList.get(0).page + ".." + rangeList.get(rangeList.size() - 1).page
+                    + " collected=" + requests.size() + " (tiles=" + (requests.size() - thumbs)
+                    + " thumbs=" + thumbs + ")"
+                    + " enqueued=" + ordered.size()
+                    + " budget=" + CACHE_SIZE + "/" + THUMBNAILS_CACHE_SIZE
+                    + " zoom=" + Diag.f(pdfView.getZoom())
+                    + " yOff=" + Diag.f(yOffset));
         }
     }
 

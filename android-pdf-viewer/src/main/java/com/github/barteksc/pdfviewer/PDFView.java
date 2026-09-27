@@ -62,6 +62,7 @@ import com.github.barteksc.pdfviewer.source.FileSource;
 import com.github.barteksc.pdfviewer.source.InputStreamSource;
 import com.github.barteksc.pdfviewer.source.UriSource;
 import com.github.barteksc.pdfviewer.util.Constants;
+import com.github.barteksc.pdfviewer.util.Diag;
 import com.github.barteksc.pdfviewer.util.FitPolicy;
 import com.github.barteksc.pdfviewer.util.MathUtils;
 import com.github.barteksc.pdfviewer.util.SnapEdge;
@@ -474,6 +475,10 @@ public class PDFView extends RelativeLayout {
 
     @Override
     protected void onDetachedFromWindow() {
+        // 诊断：recycle() 会把 recycled 置 true、state 打回 DEFAULT，而 onDraw 在这两者任一为真时
+        // 直接 return —— 也就是「整屏全白、且此后一直白」。如果滑动过程中这个 view 被 detach 过
+        // 又没有重新 load()，那就是病因。attach/detach 的成对关系必须能从日志里看出来。
+        Diag.log("LIFECYCLE detach recycled=" + recycled + " state=" + state);
         recycle();
         if (renderingHandlerThread != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
@@ -484,6 +489,13 @@ public class PDFView extends RelativeLayout {
             renderingHandlerThread = null;
         }
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        // 诊断：detach 之后如果这里没有跟着重新 load()，recycle() 的效果就是不可逆的。
+        Diag.log("LIFECYCLE attach recycled=" + recycled + " state=" + state);
     }
 
     @Override
@@ -617,10 +629,18 @@ public class PDFView extends RelativeLayout {
         }
 
         if (recycled) {
+            if (Diag.due("draw-recycled", 1000)) {
+                Diag.log("DRAW-EARLY reason=recycled state=" + state
+                        + " zoom=" + Diag.f(zoom) + " yOff=" + Diag.f(currentYOffset));
+            }
             return;
         }
 
         if (state != State.SHOWN) {
+            if (Diag.due("draw-state", 1000)) {
+                Diag.log("DRAW-EARLY reason=state state=" + state
+                        + " zoom=" + Diag.f(zoom) + " yOff=" + Diag.f(currentYOffset));
+            }
             return;
         }
 
@@ -635,12 +655,26 @@ public class PDFView extends RelativeLayout {
         }
 
         // Draws parts
+        int drawn = 0;
         for (PagePart part : cacheManager.getPageParts()) {
+            drawn++;
             drawPart(canvas, part);
             if (callbacks.getOnDrawAll() != null
                     && !onDrawPagesNums.contains(part.getPage())) {
                 onDrawPagesNums.add(part.getPage());
             }
+        }
+
+        // 分块一个都没画出来时记一笔：cached=0 说明「本轮根本没排进任务」，cached>0 而画面仍空
+        // 说明东西在缓存里却没被 drawPart 画出来（位图已回收 / 被视口裁掉）。这两者指向完全不同的
+        // 方向，必须分开。
+        if (drawn == 0 && Diag.due("draw-empty", 1000)) {
+            Diag.log("DRAW-EMPTY cached=0 thumbs=" + cacheManager.getThumbnails().size()
+                    + " state=" + state + " zoom=" + Diag.f(zoom)
+                    + " yOff=" + Diag.f(currentYOffset)
+                    + " view=" + getWidth() + "x" + getHeight()
+                    + " docLen=" + Diag.f(pdfFile == null ? -1 : pdfFile.getDocLen(zoom))
+                    + " pages=" + (pdfFile == null ? -1 : pdfFile.getPagesCount()));
         }
 
         for (Integer page : onDrawPagesNums) {
@@ -761,6 +795,16 @@ public class PDFView extends RelativeLayout {
         // initPdf → Configurator.load）才会把一切重画一遍。详见 AGENTS.md。
         renderingHandler.beginPass();
         cacheManager.makeANewSet();
+
+        if (Diag.due("pass", 400)) {
+            Diag.log("PASS state=" + state + " zoom=" + Diag.f(zoom)
+                    + " xOff=" + Diag.f(currentXOffset) + " yOff=" + Diag.f(currentYOffset)
+                    + " view=" + getWidth() + "x" + getHeight()
+                    + " cached=" + cacheManager.getPageParts().size()
+                    + " pending=" + renderingHandler.pendingCount()
+                    + " rendered=" + renderingHandler.renderedCount()
+                    + " " + renderingHandler.nullSummary());
+        }
 
         pagesLoader.loadPages();
         renderingHandler.dropStaleTasks();

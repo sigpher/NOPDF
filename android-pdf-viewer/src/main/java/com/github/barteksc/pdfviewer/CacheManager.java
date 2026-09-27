@@ -19,6 +19,7 @@ import android.graphics.Bitmap;
 import android.graphics.RectF;
 
 import com.github.barteksc.pdfviewer.model.PagePart;
+import com.github.barteksc.pdfviewer.util.Diag;
 import com.github.barteksc.pdfviewer.util.PartCache;
 
 import java.util.ArrayList;
@@ -63,7 +64,16 @@ class CacheManager {
             // If cache too big, remove and recycle
             trimAndRecycle();
             // 同一格被渲染两遍时，新来的会把旧的顶掉；旧的那张位图就此归我们，必须回收。
-            recycle(parts.add(part));
+            PagePart displaced = parts.add(part);
+            // 诊断：displaced 非空意味着「同一格又画了一遍」。PartCache 的整套设计就是为了让这一行
+            // 变得罕见（集合在结构上装不下两个相等条目），所以它频繁出现就说明还有别处能造出孪生
+            // 条目，0.5.6 的修法是不完整的。
+            if (displaced != null && Diag.due("cache-displace", 1000)) {
+                Diag.log("CACHE-DISPLACE page=" + part.getPage()
+                        + " bounds=" + part.getPageRelativeBounds()
+                        + " size=" + parts.size());
+            }
+            recycle(displaced);
         }
     }
 

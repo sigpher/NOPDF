@@ -19,6 +19,7 @@ import android.graphics.Bitmap;
 import android.graphics.RectF;
 
 import com.github.barteksc.pdfviewer.exception.PageRenderingException;
+import com.github.barteksc.pdfviewer.util.Diag;
 import com.github.barteksc.pdfviewer.util.FitPolicy;
 import com.github.barteksc.pdfviewer.util.PageSizeCalculator;
 import com.github.barteksc.pdfviewer.engine.EngineBookmark;
@@ -325,6 +326,10 @@ class PdfFile {
             residency.trim();
 
             if (failure != null) {
+                // 诊断：开页失败会让 proceed() 返回 null、那一页整页不画。失败标记会随逐出而过期，
+                // 所以它本身不该造成永久空白；但「开页在失败」这件事必须看得见，否则无从判断空白
+                // 到底是缓存问题还是引擎问题。
+                Diag.log("OPEN-FAIL page=" + pageIndex + " docPage=" + docPage, failure.getCause());
                 throw failure;
             }
             return true;

@@ -25,6 +25,7 @@ import android.util.Log;
 
 import com.github.barteksc.pdfviewer.exception.PageRenderingException;
 import com.github.barteksc.pdfviewer.model.PagePart;
+import com.github.barteksc.pdfviewer.util.Diag;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -77,6 +78,14 @@ class RenderingHandler extends Handler {
      * 由 {@link #dropStaleTasks()} 清掉。
      */
     private int generation;
+
+    /** 诊断用：画完的分块计数，由 {@link #renderedCount()} 取走。 */
+    private int rendered;
+
+    /** 诊断用：{@code proceed()} 返回 null 的次数与原因分类。 */
+    private int nullByPageError;
+    private int nullByZeroSize;
+    private int nullByRunning;
 
     RenderingHandler(Looper looper, PDFView pdfView) {
         super(looper);
@@ -135,6 +144,14 @@ class RenderingHandler extends Handler {
         for (int i = 0; i < stale.size(); i++) {
             removeMessages(MSG_RENDER_TASK, stale.get(i));
         }
+
+        // 诊断：一轮丢掉多少个任务。正常滑动时丢掉的多是「已经滑过去了」的，那是设计意图；但如果
+        // 丢掉的量与本轮排进去的量同阶甚至更大，就要怀疑「本轮仍然需要的任务被误判成上一轮残留」
+        // ——那会让那一格再也没人画（dropStaleTasks 判的是 generation < current）。
+        if (stale.size() > 0 && Diag.due("drop", 400)) {
+            Diag.log("DROP stale=" + stale.size() + " gen=" + current
+                    + " stillQueued=" + pendingCount());
+        }
     }
 
     /** 全部丢弃。{@code PDFView.recycle()} 用。 */
@@ -143,6 +160,39 @@ class RenderingHandler extends Handler {
         synchronized (queueLock) {
             pending.clear();
             generation++;
+        }
+    }
+
+    /** 诊断用：排队中（含正在画的）任务数。 */
+    int pendingCount() {
+        synchronized (queueLock) {
+            return pending.size();
+        }
+    }
+
+    /**
+     * 诊断用：自上次调用以来画完的分块数。
+     *
+     * <p>取走即清零，所以调用者能算出「这一轮排进去的任务到底有没有被画出来」。渲染线程一旦死掉，
+     * 这个数就会停在非零值上不再增长——这是把「渲染线程死了」和「没人排任务」区分开的关键。
+     */
+    int renderedCount() {
+        synchronized (queueLock) {
+            int n = rendered;
+            rendered = 0;
+            return n;
+        }
+    }
+
+    /**
+     * 诊断用：{@code proceed()} 返回 null 的累计次数，按原因分类。
+     *
+     * <p>「排了任务但一张都没画出来」和「压根没排任务」的区别全在这里：前者会让这三个计数上涨。
+     */
+    String nullSummary() {
+        synchronized (queueLock) {
+            return "nulls(zero=" + nullByZeroSize + ",err=" + nullByPageError
+                    + ",stopped=" + nullByRunning + ")";
         }
     }
 
@@ -208,6 +258,9 @@ class RenderingHandler extends Handler {
         try {
             final PagePart part = proceed(task);
             if (part != null) {
+                synchronized (queueLock) {
+                    rendered++;
+                }
                 if (running) {
                     pdfView.post(new Runnable() {
                         @Override
@@ -217,6 +270,9 @@ class RenderingHandler extends Handler {
                     });
                 } else {
                     part.getRenderedBitmap().recycle();
+                    synchronized (queueLock) {
+                        nullByRunning++;
+                    }
                 }
             }
         } catch (final PageRenderingException ex) {
@@ -258,7 +314,29 @@ class RenderingHandler extends Handler {
         int w = Math.round(renderingTask.width);
         int h = Math.round(renderingTask.height);
 
-        if (w == 0 || h == 0 || pdfFile.pageHasError(renderingTask.page)) {
+        // 诊断：返回 null 的三个原因必须分开记。混在一起 return 的话，「这一格没画出来」在日志上
+        // 和「这一格被请求了但画不出来」长得一样，而这两者的修法完全不同。
+        //   zeroSize  -> 请求侧的尺寸算错了（看 PagesLoader 的 GRID-ANOMALY）
+        //   pageError -> 引擎开页失败（看 PdfFile 的 OPEN-FAIL）
+        if (w == 0 || h == 0) {
+            synchronized (queueLock) {
+                nullByZeroSize++;
+            }
+            if (Diag.due("proceed-zero", 1000)) {
+                Diag.log("PROCEED-NULL reason=zeroSize page=" + renderingTask.page
+                        + " req=" + Diag.f(renderingTask.width) + "x" + Diag.f(renderingTask.height)
+                        + " thumb=" + renderingTask.thumbnail);
+            }
+            return null;
+        }
+        if (pdfFile.pageHasError(renderingTask.page)) {
+            synchronized (queueLock) {
+                nullByPageError++;
+            }
+            if (Diag.due("proceed-err", 1000)) {
+                Diag.log("PROCEED-NULL reason=pageHasError page=" + renderingTask.page
+                        + " thumb=" + renderingTask.thumbnail);
+            }
             return null;
         }
 
