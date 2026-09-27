@@ -35,6 +35,11 @@ import static com.github.barteksc.pdfviewer.util.Constants.PRELOAD_OFFSET;
 class PagesLoader {
 
     private PDFView pdfView;
+    /**
+     * 只用来给 {@link com.github.barteksc.pdfviewer.model.PagePart#cacheOrder} 盖一个次序戳，
+     * **不再决定淘汰顺序**——0.5.6 起淘汰顺序由 {@code util.PartCache} 的插入序决定，原因见
+     * 那里的类注释。留着它是为了排查问题时能看出一个条目是第几个被请求的。
+     */
     private int cacheOrder;
     private float xOffset;
     private float yOffset;
@@ -296,7 +301,7 @@ class PagesLoader {
                 }
 
                 RectF pageRelativeBounds = new RectF(relX, relY, relX + relWidth, relY + relHeight);
-                if (!pdfView.cacheManager.upPartIfContained(range.page, pageRelativeBounds, cacheOrder)) {
+                if (!pdfView.cacheManager.upPartIfContained(range.page, pageRelativeBounds)) {
                     cells.add(new Cell(range.page, renderWidth, renderHeight, pageRelativeBounds, false));
                     requests.add(new Request(cells.size() - 1, range.page,
                             distanceTo(range.page, currentPage), false));

@@ -159,7 +159,7 @@ R8 只要改名或删掉其中任何一个，运行时就是 `UnsatisfiedLinkErr
 sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字还在 dex 里
 ```
 
-现有的 45 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
+现有的 63 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
 问题，所以这个检查是唯一能挡住它的自动化关卡。
 
 ### 渲染位图必须是 ARGB_8888（换引擎踩过的最大的坑）
@@ -287,7 +287,8 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
 **仍未处理的相关项**（有意为之，都需要真机验证）：
 
 - ~~MuPDF 的 store 是进程级的、且永不裁剪~~ —— **0.5.4 已修，见下一节。**
-- ~~滑动过程中的空白~~ —— **已修，见「滑动时整页空白 → 队列每帧被整体清空」一节。**
+- ~~滑动过程中的空白~~ —— **0.5.5 改过调度（队列每帧被清空、缩略图排队首），但用户报告说没治好；
+  真正的病因在缓存，见下一节（0.5.6）。**
 
 ### 长文档整页全白 → store 随**渲染过的页数**线性增长（0.5.4 修）
 
@@ -414,6 +415,74 @@ AGENTS.md 从 0.5.3 起就记着「滑动过程中的空白没动」，但当时
 「一下全出」。若真机上仍觉得跟不上，下一步该动的是 `PART_SIZE`（256 → 更小）或缩略图预渲染，
 而不是再改调度。
 
+**这段改动保留在代码里，但用户报告说它没有治好那个症状**（见下一节）。改动本身是净收益：每帧
+清零队列确实是错的，缩略图排在队首也确实在饿死分块。只是**病因不在这里**。
+
+### 滑动时整页空白，0.5.5 没修好 → 缓存把同一格记成「已回收」又当成命中（0.5.6 修）
+
+0.5.5 发布后用户报**一模一样**的话：「快速滑动后，依然页面空白，点击主题按钮后即可显示页面」。
+**0.5.5 的诊断是错的。** 先说清楚已经排除掉的东西，免得下一个人再查一遍：
+
+- 发布的包里**确实有** 0.5.5 的改动——反编译 release dex 确认 `RenderSchedule`（含其
+  `Request`）、`RenderingHandler` 的 `TileKey`（有 `equals`+`hashCode`）都在，R8 只是把方法
+  改名了。所以不是「用户装的是旧包」。
+- 几何量（`originalPageSizes` / `pageOffsets`）**只在载入和 `onSizeChanged` 时算**，滑动中不会被
+  改坏，所以「页尺寸被算错 → 偏移错位 → 请求错页」这条路不存在。
+- `CacheManager` 的 LRU 回收本身是配对的（每次 `recycle()` 都有对应的移出）。
+- `loadPageByOffset` / `showPage` / `loadPages` 三者的调用关系是闭合的（`showPage` 内部就会
+  `loadPages()`），不存在「只跳页不请求」的空档。
+- `getPageParts()` 返回 passive + active 两层，所以「被降级的格子没画」也不成立。
+
+真正的机制是 `PriorityQueue` 的一条四步链，每一步都能在源码里核对：
+
+1. **`PriorityQueue.remove(Object)` 删的是「*等于*该对象的某个元素」，不是该对象本身。**
+   旧 `upPartIfContained` 把自己找到的那个 `PagePart` 传进去。可缓存里一旦有两个
+   page+bounds 相同的 `PagePart`（**同一格渲染两遍就会产生一对**），它就可能删掉**另一个** ——
+   于是同一个对象**同时留在 passive 和 active 两层里**。
+2. **`AbstractQueue.addAll` 是逐个 `offer`，允许重复。** 于是 `makeANewSet()` 的
+   `passiveCache.addAll(activeCache)` 把那个对象**再塞一份**进 passiveCache。
+3. 下一轮 `makeAFreeSpace()` 从 passiveCache 轮询出一份并 `bitmap.recycle()` ——
+   **另一份还在缓存里，而它的位图已经是死的。**
+4. `PDFView.drawPart` 开头有 `if (renderedBitmap.isRecycled()) return;`（不画），
+   而 `upPartIfContained` **只按 page+bounds 匹配、从不看位图是否已回收** → 这一格被当成
+   「已经在缓存里」→ **永远不会再被请求** → **那一格永久空白**。
+
+只有 `recycle()`（切换主题按钮走的就是 `initPdf` → `Configurator.load` → `recycle`）会清空两层，
+所以才会「切一下主题就好了」。**长文档才出现**，因为要先把 120 张的缓存塞满并淘汰过。
+
+**那一对孪生 `PagePart` 从哪来？** 是 0.5.5 自己放大的：`RenderingHandler.handleMessage` 的
+`finally` 里 `pending.remove(task.key)` 发生在 `pdfView.post(onBitmapRendered)` **之后**，于是
+存在一个窗口——这一格**既不在队列里、也还没进缓存**。下一次 `loadPages()` 就会为它再排一次渲染，
+交付出第二个相等的 `PagePart`。0.5.5 之前每帧 `removeMessages` 把渲染线程饿着，一格很少真画完，
+所以这个缺陷是**潜伏**的；0.5.5 让渲染线程全速跑，它就变成常发。
+
+**修法是结构性的，不是「更小心地写」**：新增 `util/PartCache`（纯 JVM，有测试），两层都用
+`LinkedHashSet` —— **集合在结构上不可能装下两个相等的条目**，上面整类问题不存在了。配套：
+
+- `PagePart` 补上 `hashCode`（原来 `equals` 相等而 hash 不等），并让 `equals` **也看
+  `thumbnail`**（原来缩略图和「恰好覆盖整页的分块」会被当成同一格）。
+- **死条目一律当不存在**：`promote` / `entries` / `containsThumbnail` 都查 `alive`，扫描时顺手清掉。
+  旧缓存没有这一步，所以一旦留下死条目就再也回不来；有了它，**即使将来还有别处能造出死条目，
+  也会被重新请求，不需要重载文档**。这是把「只有切换主题能治」变成「自己能恢复」的关键。
+- 淘汰顺序不再依赖 `cacheOrder` 这个**会在堆里被就地改掉**的排序键：passive 里的条目一律比
+  active 里的老，所以「先淘汰 passive 的第一个」就是 LRU。`PagePart.cacheOrder` 字段保留
+  （公开模型类，不改它的 API）但**不再决定顺序**，已在两处注明。
+- `add` 会**交还**被顶掉的孪生条目，调用方负责回收它的位图——否则每次重复渲染漏一张 256px 位图。
+
+**教训（第五次同类，而且这次最该记住）**：前四次是「诊断对但不充分」，**这次是诊断本身错了**，
+而且错在我自己新写的代码的邻域。0.5.5 我把「队列被每帧清空」当成病因，写了一大段推导、还给
+`RenderSchedule` 加了 9 个测试，绿灯，然后发布——结果用户报**逐字相同**的话。真正的病因在
+**缓存**里，一处我前几轮读过但判定为「已审计、没问题」的地方。
+
+具体到可操作的：**「我审计过这个文件」不是结论，是没有证据的断言**，尤其当同一批文件里已经
+有一个 bug 时——那会让人对整批都放松。以及：**绿测试只证明被测的那个函数对**；0.5.5 的 9 个
+`RenderScheduleTest` 全绿，而 `RenderSchedule` 从头到尾是对的，错的是它下游的缓存。**发布前
+问一句「我这次改的代码，和用户报的症状之间，那条因果链的每一环都核对过吗」，而不是
+「我的改动合理吗」。**
+
+顺带一提：这次是**第一次先验证发布产物再下结论**。反编译 dex 只需一条命令，却直接排除了
+「用户装的是旧包」这个最容易被忽略、也最消耗时间的分支。
+
 **教训（第四次同类）**：0.5.3 结尾那句「松手后最终画面是对的」是**推理**，不是观测，而且推理
 所依赖的那句「一帧内画不完一格」当时也没有任何数据支撑。**把「应该会恢复」写进文档，等于给
 下一个读文档的人（包括我自己）埋一个未验证的假设**——0.5.4 就是照着它判断「这次只修了滑动中」
@@ -434,13 +503,15 @@ AGENTS.md 从 0.5.3 起就记着「滑动过程中的空白没动」，但当时
   `android.splits.abi`（`enable true` + `reset()` + `include 'armeabi-v7a','arm64-v8a'`、
   `universalApk false`）。此前 abiFilters 只决定"哪些 ABI 进包"，两个 ABI 仍塞在同一个 APK 里；
   现在每个 APK 只带一份 native 库。`armeabi`(ARMv5) / `x86` / `x86_64` 均不产出。
-- **包体现状（0.5.5 release，换 MuPDF 后）**：`arm64-v8a` 包 **8,559,961 B ≈ 8.2MB**、
-  `armeabi-v7a` 包 **7,703,482 B ≈ 7.3MB**，即 0.2.2（6,142,542 / 6,003,851 B）的基础上
+- **包体现状（0.5.6 release，换 MuPDF 后）**：`arm64-v8a` 包 **8,560,502 B ≈ 8.2MB**、
+  `armeabi-v7a` 包 **7,704,041 B ≈ 7.3MB**，即 0.2.2（6,142,542 / 6,003,851 B）的基础上
   分别 +2.41MB / +1.70MB，换引擎是包体变大的主因（详见「渲染引擎」一节的对比表）。
-  相对 0.5.0（8,517,261 / 7,660,782 B）各 +42,700 / +42,700 B，其中 JNI keep 规则约
-  +39.5KB，其余是逐版累积的 Java 改动（0.5.4→0.5.5 是渲染调度改动，
-  各 +2,227 / +2,182 B；`.so` 未变，压缩后仍是 5,492,229 / 4,635,758 B，
-  **native 占压缩后体积约 60%**）。
+  相对 0.5.0（8,517,261 / 7,660,782 B）各 +43,241 / +43,259 B，其中 JNI keep 规则约
+  +39.5KB，其余是逐版累积的 Java 改动（0.5.5→0.5.6 是分块缓存改动，0.5.4→0.5.5 是渲染调度改动）。
+  `.so` 未变，压缩后仍是 5,492,229 / 4,635,758 B，**native 占压缩后体积约 60%**。
+  **注意 R8 不是逐字节确定的**：同样两个版本的 `clean` 连续构建，APK 会差几十到一百多字节
+  （实测 0.5.6 连续三次得 8,560,690 / 8,560,578 / 8,560,502），所以拿几十字节的差异去判断
+  「有没有多打进什么东西」是没有意义的；`.so` 那部分则是逐字节可比的。
   两包用**同一签名与同一 versionCode**，安装时按设备 ABI 选包。
   剩余可压缩空间主要在 MuPDF 本身（可关掉 mujs/extract/cmarkgfm/openjpeg），
   其次是 PNG 调色板化（见 Icons 一节）与 R8 规则；`assets/` 已无内容，
@@ -537,8 +608,8 @@ AGENTS.md 从 0.5.3 起就记着「滑动过程中的空白没动」，但当时
 ## Testing
 
 - Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry), `app/src/test/java/com/github/barteksc/pdfviewer/engine/StoreTrimTest.kt` (7 cases, store-trim interval and counter reset) and `app/src/test/java/com/github/barteksc/pdfviewer/util/RenderScheduleTest.kt` (9 cases, render-request priority: tiles before thumbnails, nearest first, budget). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 45 tests, 0 failures.
-- `PageRegionTest`, `PageResidencyTest` and `StoreTrimTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath. `RenderSchedule` follows the same rule and lives in `util/` rather than `engine/`, because it is scheduler policy, not an engine concern.
+- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry), `app/src/test/java/com/github/barteksc/pdfviewer/engine/StoreTrimTest.kt` (7 cases, store-trim interval and counter reset) and `app/src/test/java/com/github/barteksc/pdfviewer/util/RenderScheduleTest.kt` (9 cases, render-request priority: tiles before thumbnails, nearest first, budget) and `app/src/test/java/com/github/barteksc/pdfviewer/util/PartCacheTest.kt` (18 cases, two-tier part cache: no duplicate entries, a dead entry is reported absent and reaped, LRU eviction order, displaced entries handed back). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 63 tests, 0 failures.
+- `PageRegionTest`, `PageResidencyTest` and `StoreTrimTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath. `RenderSchedule` and `PartCache` follow the same rule and live in `util/` rather than `engine/`, because they are scheduler/cache policy, not an engine concern. `PartCache` in particular **must** stay free of `Bitmap`/`RectF`: it takes an `Adapter` (equality + liveness) from `CacheManager`, which is the only thing that touches Android types — that indirection is what makes the whole cache testable on the JVM.
 - **The library module is compiled at Java 7 source level** (it has no `compileOptions`, so AGP 3.4.1 defaults it there, unlike `app` which sets 1.8). No lambdas there, and an anonymous class cannot capture a non-`final` local. The Kotlin sources in the fork do use the 1.8 toolchain, so the two source sets differ.
 
 ## Icons
