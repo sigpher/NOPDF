@@ -452,6 +452,8 @@ public class PDFView extends RelativeLayout {
         renderingHandler = null;
         scrollHandle = null;
         isScrollHandleInit = false;
+        // 诊断心跳也要停，否则 recycle 之后它会一直往日志里打 null 字段。
+        removeCallbacks(diagTick);
         currentXOffset = currentYOffset = 0;
         zoom = 1f;
         recycled = true;
@@ -823,6 +825,8 @@ public class PDFView extends RelativeLayout {
         renderingHandler = new RenderingHandler(renderingHandlerThread.getLooper(), this);
         renderingHandler.start();
 
+        startDiagHeartbeat();
+
         if (scrollHandle != null) {
             scrollHandle.setupLayout(this);
             isScrollHandleInit = true;
@@ -834,6 +838,38 @@ public class PDFView extends RelativeLayout {
 
         jumpTo(defaultPage, false);
     }
+
+    private void startDiagHeartbeat() {
+        removeCallbacks(diagTick);
+        postDelayed(diagTick, 1000);
+    }
+
+    /**
+     * 诊断用的每秒快照，<b>不依赖任何用户输入</b>。
+     *
+     * <p>必要性：{@link #loadPages()} 只在 touch 事件与滑动动画帧里跑，所以 {@code PASS} 那条
+     * 日志在「手停下来之后」就断了——而这恰恰是要看的时刻（空白是永久的，用户会松手、会停在
+     * 那里、会来回滑几下再停）。没有这条心跳，最后一次 {@code PASS} 与空白之间的时间关系
+     * 就完全看不到，也就分不出「渲染线程死了」和「没人排任务」——前者 rendered 停在非零值，
+     * 后者 rendered 归零而 pending 涨着。
+     */
+    private final Runnable diagTick = new Runnable() {
+        @Override
+        public void run() {
+            if (state == State.SHOWN && renderingHandler != null && pdfFile != null) {
+                Diag.log("SNAP state=" + state + " recycled=" + recycled
+                        + " zoom=" + Diag.f(zoom)
+                        + " yOff=" + Diag.f(currentYOffset) + "/" + Diag.f(pdfFile.getDocLen(zoom))
+                        + " curPage=" + currentPage
+                        + " cached=" + cacheManager.getPageParts().size()
+                        + " thumbs=" + cacheManager.getThumbnails().size()
+                        + " pending=" + renderingHandler.pendingCount()
+                        + " drawn1s=" + renderingHandler.renderedCount()
+                        + " " + renderingHandler.nullSummary());
+            }
+            postDelayed(this, 1000);
+        }
+    };
 
     void loadError(Throwable t) {
         state = State.ERROR;

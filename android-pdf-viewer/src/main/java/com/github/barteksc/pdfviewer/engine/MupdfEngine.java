@@ -90,6 +90,11 @@ class MupdfEngine implements PdfEngine {
             return false;
         }
 
+        /** 诊断用：当前驻留页数。 */
+        synchronized int openCount() {
+            return pages.size();
+        }
+
         synchronized void destroyPages() {
             for (int i = 0; i < pages.size(); i++) {
                 pages.valueAt(i).destroy();
@@ -234,9 +239,28 @@ class MupdfEngine implements PdfEngine {
     @Override
     public void closePage(EngineDocument handle, int pageIndex) {
         MuDoc muDoc = muDoc(handle);
-        if (muDoc.releasePage(pageIndex) && muDoc.storeTrim.onPageReleased()) {
+        boolean released = muDoc.releasePage(pageIndex);
+        boolean trim = released && muDoc.storeTrim.onPageReleased();
+        if (trim) {
             emptyStore();
         }
+        // 诊断：用户报告「滑动 8/16/24… 页后容易出现空白」，而本文件里恰好有两个 8——驻留上限
+        // （PageResidency）与 store 裁剪间隔（StoreTrim）。逐出与清 store 都记一笔并计数，才能
+        // 看出空白是不是紧跟在某一次清 store 之后。store 那条已被本机探针排除（order.c：清在
+        // 开页与渲染之间也不改变输出），所以真正要看的是逐出的节奏与耗时。
+        com.github.barteksc.pdfviewer.util.Diag.log("CLOSE page=" + pageIndex
+                + " released=" + released + " emptyStore=" + trim
+                + " stillOpen=" + muDoc.openCount());
+    }
+
+    /**
+     * 诊断用：当前驻留的页数。
+     *
+     * <p>用来核对「驻留上限」这条线是否真的生效——若它长期大于 {@code PageResidency} 的上限，
+     * 说明逐出没有真正发生，那 {@code emptyStore} 的节奏也就不是按设想在跑。
+     */
+    int openCount(EngineDocument handle) {
+        return ((MuDoc) handle.getNativeDocument()).pages.size();
     }
 
     /**
