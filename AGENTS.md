@@ -483,6 +483,56 @@ AGENTS.md 从 0.5.3 起就记着「滑动过程中的空白没动」，但当时
 顺带一提：这次是**第一次先验证发布产物再下结论**。反编译 dex 只需一条命令，却直接排除了
 「用户装的是旧包」这个最容易被忽略、也最消耗时间的分支。
 
+### 整屏全白（不是整页空白）→ 第七次尝试，这次只测不修（0.5.7-diag，**未修**）
+
+0.5.6 发布后用户确认**仍然复现**，并补了两条决定性的事实：
+
+- **空白是永久的**；
+- **整屏全白，一页内容都没有**——不是「这一页空白、邻页正常」。
+
+第二条把范围收得很窄。`PDFView.onDraw` 走到一个分块都不画，只有三条路：
+
+1. `recycled == true`——只有 `recycle()` 会置位，调用点是 `loadError` 与 **`onDetachedFromWindow`**；
+2. `state != State.SHOWN`——`recycle()` 会把它打回 `DEFAULT`；
+3. 缓存里确实没有可画的分块，且本轮一个任务都没排进去。
+
+**这次没有再猜。** 已排除的（读代码推导或本机实测）：
+
+| 怀疑 | 结论 | 依据 |
+| --- | --- | --- |
+| MuPDF store 被 `emptyStore()` 清坏（0.5.4 加的） | **排除** | 写了 `/tmp/opencode/revisit.c` 探针，按应用策略跑（驻留 8 + 每 8 次释放 `fz_empty_store`），200 页、24 次清 store 后回访第 0 页，12 格校验和**逐位相同** |
+| 缓存里有死条目（0.5.6 修的那个） | **排除** | `PartCache` 用 `LinkedHashSet`，结构上装不下两个相等条目；死条目一律当不存在并重新请求 |
+| `pageHasError` 永久标记 | **排除** | `hasFailed` 要求该页仍在 8 页的 `held` 表里，逐出即失效 |
+| 队列每轮清空 / `dropStaleTasks` 误杀 | **排除** | `addRenderingTask` 会把仍需要的任务就地更新 `generation`；只丢本轮不需要**且未开画**的 |
+| 几何算错导致 `rangeList` 为空 | **排除** | `MathUtils.max` 是 clamp-to-max；按此推导 `firstPage` 只在真正位于顶部时为 0，循环不会空 |
+
+注意第二行是**实测**：上一轮（0.5.4）之所以能定案，也是因为改去量而不是猜。这条路子是对的，
+这次又用了一次。
+
+**做法：改为在真机上取证。** 新增 `android-pdf-viewer/.../util/Diag.java`（单一 tag
+`NOPDFDIAG`、按 key 节流、纯日志无逻辑），并在以下位置各打一条：
+
+| 日志 | 位置 | 分辨什么 |
+| --- | --- | --- |
+| `DRAW-EARLY reason=recycled\|state` | `PDFView.onDraw` 两条提前返回 | 上面的路 1 / 路 2 |
+| `LIFECYCLE attach\|detach` | `PDFView` | view 是否被 detach 过（`onDetachedFromWindow` 会 `recycle()`，**且没有对应的重新 load**） |
+| `DRAW-EMPTY cached=0 thumbs=… docLen=… pages=…` | `PDFView.onDraw` | 路 3；`cached>0` 却仍空则指向 `drawPart` 跳过 |
+| `PASS … cached/pending/rendered/nulls(…)` | `PDFView.loadPages` | 每轮快照。`rendered` 停增 = 渲染线程死了；`nulls` 分类上涨 = 排了但画不出 |
+| `LOAD ranges=… collected=… enqueued=…` / `LOAD-NORANGE` | `PagesLoader.loadVisible` | 请求侧：收集了多少、真排进多少、范围是否为空 |
+| `GRID-ANOMALY page=… size=… rows=… cols=…` | `PagesLoader.getPageColsRows` | `rows/cols==0` 会让 `collectCells` 跳过每一格 → 该页零任务 |
+| `DROP stale=… gen=… stillQueued=…` | `RenderingHandler.dropStaleTasks` | 丢弃量是否与入队量同阶（误杀仍需要的任务） |
+| `PROCEED-NULL reason=zeroSize\|pageHasError` | `RenderingHandler.proceed` | 「没画出来」的**原因**分类 |
+| `OPEN-FAIL page=…` | `PdfFile.openPage` | 引擎开页失败（会抛栈） |
+| `CACHE-DISPLACE page=…` | `CacheManager.cachePart` | 同一格又被画了一遍 ⇒ 0.5.6 的修法不完整 |
+
+`versionName` 记作 `0.5.7-diag`、`versionCode 22` 以便覆盖安装；签名与 0.5.6 相同
+（SHA-256 `2ae667…`），书架与阅读进度不受影响。**这是诊断脚手架，不是修复**——定位之后应当
+连同 `Diag` 一起删掉，并把 `versionCode`/`versionName` 归位。
+
+**有意没做的事**：加一个「N 秒没画出东西就自动重载」的看门狗。那样确实能让症状消失，
+但它正是前六次失败里最坏的那种修法——用掩盖代替诊断，还会让应用在正常使用时莫名重载。
+在没有真机日志之前，任何声称修好的结论都不该被采信。
+
 **教训（第四次同类）**：0.5.3 结尾那句「松手后最终画面是对的」是**推理**，不是观测，而且推理
 所依赖的那句「一帧内画不完一格」当时也没有任何数据支撑。**把「应该会恢复」写进文档，等于给
 下一个读文档的人（包括我自己）埋一个未验证的假设**——0.5.4 就是照着它判断「这次只修了滑动中」
