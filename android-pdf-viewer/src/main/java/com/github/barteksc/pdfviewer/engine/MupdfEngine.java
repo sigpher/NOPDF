@@ -210,6 +210,15 @@ class MupdfEngine implements PdfEngine {
      * no such entry point, so the page is loaded, measured, and released again. Pages
      * that are already resident (because they are open for rendering) are measured
      * through the cache instead.
+     *
+     * <h3>这条路径<b>不会</b>撑大 store（已核对源码，别再怀疑一遍）</h3>
+     *
+     * <p>{@code boundsSize} → {@code Page.getBounds()} → JNI {@code Page_getBoundsNative}
+     * → {@code fz_bound_page_box} → {@code pdf_bound_page} → {@code pdf_page_transform_box}。
+     * 最后这一步只读 MediaBox / CropBox / Rotate，<b>不跑页</b>（跑页的是
+     * {@code fz_run_page}）。所以「打开一篇 200 页文档会顶高 store」这个看起来很像 0.5.4
+     * 那条曲线的猜测不成立：这里既不把页内容解析进 store，也不该为此去计数触发
+     * {@link StoreTrim}。真正的 store 增长只来自<b>渲染</b>，0.5.4 的修法覆盖的是那条路。
      */
     @Override
     public EngineSize getPageSize(EngineDocument handle, int pageIndex) {
