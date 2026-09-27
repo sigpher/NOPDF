@@ -246,6 +246,16 @@ public class PDFView extends RelativeLayout {
     /** Pages numbers used when calling onDrawAllListener */
     private List<Integer> onDrawPagesNums = new ArrayList<>(10);
 
+    // 诊断：onDraw 里的 drawn 数的是**缓存条目数**，不是实际画出数。drawPart 有一处静默剔除
+    // （视口判定），几何一旦算错就会把所有分块都剔掉——内容没被销毁，是整条 strip 被平移到
+    // 屏幕外。这种情况下缓存里明明有上百格、画面却全白，而 drawn 仍然是正数，于是
+    // DRAW-EMPTY 那条日志根本不会触发，整个情形一片空白。这三个字段补上这个盲区：
+    // 真正画了几格、剔了几格、缓存分块的页原点落在屏幕上的哪一段。
+    private int diagDrawn;
+    private int diagCulled;
+    private float diagMinY = Float.MAX_VALUE;
+    private float diagMaxY = -Float.MAX_VALUE;
+
     /** Holds info whether view has been added to layout and has width and height */
     private boolean hasSize = false;
 
@@ -651,6 +661,12 @@ public class PDFView extends RelativeLayout {
         float currentYOffset = this.currentYOffset;
         canvas.translate(currentXOffset, currentYOffset);
 
+        // 诊断：这一帧真正画了几格。drawn（下面的计数）只是缓存条目数，两者必须分开。
+        diagDrawn = 0;
+        diagCulled = 0;
+        diagMinY = Float.MAX_VALUE;
+        diagMaxY = -Float.MAX_VALUE;
+
         // Draws thumbnails
         for (PagePart part : cacheManager.getThumbnails()) {
             drawPart(canvas, part);
@@ -677,6 +693,23 @@ public class PDFView extends RelativeLayout {
                     + " view=" + getWidth() + "x" + getHeight()
                     + " docLen=" + Diag.f(pdfFile == null ? -1 : pdfFile.getDocLen(zoom))
                     + " pages=" + (pdfFile == null ? -1 : pdfFile.getPagesCount()));
+        }
+
+        // 诊断：缓存里有分块、却一格都没画出来。这才是「整屏全白且之前正常的页也变空白」最像的
+        // 形态——内容没被销毁，是几何把它们全部剔出了视口。pageY 就是 drawPart 里那个用于视口
+        // 判定的 translationY（currentYOffset + 该页在 strip 里的偏移），画出来的话它必须落在
+        // 约 [-页高, 屏高] 内。band 全在屏高之上或全在 0 之下就说明整条 strip 平移错了。
+        if (drawn > 0 && diagDrawn == 0 && Diag.due("draw-skip", 1000)) {
+            Diag.log("DRAW-SKIP cached=" + drawn + " thumbs=" + cacheManager.getThumbnails().size()
+                    + " painted=" + diagDrawn + " culled=" + diagCulled
+                    + " state=" + state + " zoom=" + Diag.f(zoom)
+                    + " yOff=" + Diag.f(currentYOffset)
+                    + " view=" + getWidth() + "x" + getHeight()
+                    + " docLen=" + Diag.f(pdfFile == null ? -1 : pdfFile.getDocLen(zoom))
+                    + " pages=" + (pdfFile == null ? -1 : pdfFile.getPagesCount())
+                    + " curPage=" + currentPage
+                    + (diagMinY <= diagMaxY
+                        ? " pageY=[" + Diag.f(diagMinY) + ".." + Diag.f(diagMaxY) + "]" : ""));
         }
 
         for (Integer page : onDrawPagesNums) {
@@ -719,6 +752,9 @@ public class PDFView extends RelativeLayout {
         Bitmap renderedBitmap = part.getRenderedBitmap();
 
         if (renderedBitmap.isRecycled()) {
+            // 诊断：位图已回收而条目还在缓存里（0.5.6 的那类问题理论上已被 PartCache 的
+            // 死条目检查堵住）。若这条频繁出现，说明还有别处能造出死条目。
+            diagCulled++;
             return;
         }
 
@@ -758,12 +794,24 @@ public class PDFView extends RelativeLayout {
         // Check if bitmap is in the screen
         float translationX = currentXOffset + localTranslationX;
         float translationY = currentYOffset + localTranslationY;
+
+        // 诊断：记录这一格页原点落在屏幕上的位置。全部落在屏高之上（或 0 之下）就说明整条 strip
+        // 被平移出了视口——内容没丢，只是不在屏幕上，而这一分支原本不留任何痕迹。
+        if (translationY < diagMinY) {
+            diagMinY = translationY;
+        }
+        if (translationY > diagMaxY) {
+            diagMaxY = translationY;
+        }
+
         if (translationX + dstRect.left >= getWidth() || translationX + dstRect.right <= 0 ||
                 translationY + dstRect.top >= getHeight() || translationY + dstRect.bottom <= 0) {
             canvas.translate(-localTranslationX, -localTranslationY);
+            diagCulled++;
             return;
         }
 
+        diagDrawn++;
         canvas.drawBitmap(renderedBitmap, srcRect, dstRect, paint);
 
         if (Constants.DEBUG_MODE) {
@@ -922,6 +970,13 @@ public class PDFView extends RelativeLayout {
      * @param moveHandle whether to move scroll handle or not
      */
     public void moveTo(float offsetX, float offsetY, boolean moveHandle) {
+        // 诊断：这个方法会把传入的偏移**夹紧**到 [-(内容长-视口长), 0]。夹紧一旦算出错的界，
+        // currentYOffset 就会停在离真实位置很远的地方，于是 onDraw 里 canvas.translate 之后
+        // drawPart 的视口判定把所有分块都剔掉——整屏全白、且之前正常的页也一起看不见。夹紧是
+        // 「上一帧还算对、这一帧突然全错」这类现象最可能的落点，所以只在它真的改了值时记一笔。
+        float rawX = offsetX;
+        float rawY = offsetY;
+
         if (swipeVertical) {
             // Check X offset
             float scaledPageWidth = toCurrentScale(pdfFile.getMaxPageWidth());
@@ -986,6 +1041,20 @@ public class PDFView extends RelativeLayout {
             } else {
                 scrollDir = ScrollDir.NONE;
             }
+        }
+
+        // 诊断：夹紧生效时的现场。raw 是拖动算出来的值，clamped 是夹紧后的值，limit 是界。
+        if ((rawX != offsetX || rawY != offsetY) && Diag.due("moveto-clamp", 500)) {
+            float contentLen = pdfFile == null ? -1f
+                    : (swipeVertical ? pdfFile.getDocLen(zoom) : pdfFile.getDocLen(zoom));
+            Diag.log("MOVETO-CLAMP raw=(" + Diag.f(rawX) + "," + Diag.f(rawY) + ")"
+                    + " clamped=(" + Diag.f(offsetX) + "," + Diag.f(offsetY) + ")"
+                    + " limit=" + Diag.f(-contentLen + (swipeVertical ? getHeight() : getWidth()))
+                    + "..0"
+                    + " zoom=" + Diag.f(zoom)
+                    + " view=" + getWidth() + "x" + getHeight()
+                    + " curPage=" + currentPage
+                    + " vertical=" + swipeVertical);
         }
 
         currentXOffset = offsetX;
