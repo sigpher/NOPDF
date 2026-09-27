@@ -56,6 +56,11 @@ class MupdfEngine implements PdfEngine {
     private static final class MuDoc {
         final Document document;
         private final SparseArray<Page> pages = new SparseArray<>();
+        /**
+         * Per document, so opening a second document does not inherit the first one's count, and
+         * so a document that is closed and reopened starts from a clean schedule.
+         */
+        final StoreTrim storeTrim = new StoreTrim();
 
         MuDoc(Document document) {
             this.document = document;
@@ -74,12 +79,15 @@ class MupdfEngine implements PdfEngine {
             return pages.get(pageIndex);
         }
 
-        synchronized void releasePage(int pageIndex) {
+        /** @return whether a page was actually held, and so whether memory was really given back. */
+        synchronized boolean releasePage(int pageIndex) {
             Page page = pages.get(pageIndex);
             if (page != null) {
                 pages.remove(pageIndex);
                 page.destroy();
+                return true;
             }
+            return false;
         }
 
         synchronized void destroyPages() {
@@ -176,6 +184,10 @@ class MupdfEngine implements PdfEngine {
         MuDoc muDoc = muDoc(handle);
         muDoc.destroyPages();
         muDoc.document.destroy();
+        // Whatever this document pulled into the store goes back now, rather than waiting for
+        // the next document to release enough pages to trip the interval. Without this, closing a
+        // long document leaves its fonts and images behind for whatever opens next.
+        emptyStore();
     }
 
     @Override
@@ -221,7 +233,28 @@ class MupdfEngine implements PdfEngine {
 
     @Override
     public void closePage(EngineDocument handle, int pageIndex) {
-        muDoc(handle).releasePage(pageIndex);
+        MuDoc muDoc = muDoc(handle);
+        if (muDoc.releasePage(pageIndex) && muDoc.storeTrim.onPageReleased()) {
+            emptyStore();
+        }
+    }
+
+    /**
+     * Drops everything the store is holding that nothing still needs.
+     *
+     * <p>Rendering a page loads its fonts and images into the store, and dropping the page does
+     * not release them — the store only gives them back under memory pressure or when asked. On
+     * a long document that adds up to a couple of megabytes per page <em>rendered</em>, which is
+     * what eventually left whole pages too blank to draw. See {@link StoreTrim} for the
+     * measurement behind the interval.
+     *
+     * <p>{@code emptyStore} is a static that reaches the calling thread's {@code fz_context},
+     * and every thread's context shares one refcounted store, so this reaches all of them. That
+     * is safe rather than merely convenient: MuPDF takes its alloc lock around the eviction walk,
+     * the same lock the binding uses everywhere else it touches the store.
+     */
+    private static void emptyStore() {
+        com.artifex.mupdf.fitz.Context.emptyStore();
     }
 
     /**
@@ -268,6 +301,12 @@ class MupdfEngine implements PdfEngine {
             // MuPDF draws annotations as part of run(); pdfium's flag only gated them, and
             // this viewer always renders with them, so the flag has no separate handling.
             page.run(device, ctm, null);
+            // MuPDF's own AndroidDrawDevice.drawPage closes before dropping, and so should we:
+            // close is what flushes the device's final blit, and dropping an unclosed device
+            // makes MuPDF log a warning for every tile. It was measured to make no difference to
+            // what is drawn or to how much memory is held — fz_draw_drop_device frees the same
+            // caches — so this is about honouring the contract, not about fixing the leak.
+            device.close();
         } finally {
             device.destroy();
         }

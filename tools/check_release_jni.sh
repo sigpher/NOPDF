@@ -70,6 +70,8 @@ METHODS=(
     getLinks
     newNative                 # AndroidDrawDevice
     initNative                # Context
+    close                     # NativeDevice.close：渲染完必须 close，否则 MuPDF 每个分块都告警
+    emptyStore                # Context.emptyStore：归还 store，见 engine/StoreTrim
 )
 
 TMP="$(mktemp -d)"

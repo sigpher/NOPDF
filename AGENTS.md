@@ -38,13 +38,14 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
 | `PdfEngines.java` | 工厂，`create(Context)` 是**唯一**决定用哪个引擎的地方 |
 | `PageRegion.java` | 分块坐标换算（纯 JVM，有测试），见「分块坐标换算错了」一节 |
 | `PageResidency.java` | **同时打开多少页**的上限与逐出策略（纯 JVM，有测试），由 `PdfFile` 持有 |
+| `StoreTrim.java` | **多久清一次 MuPDF store**（纯 JVM，有测试），由 `MupdfEngine` 持有 |
 | `EngineDocument` / `EngineSize` / `EngineSizeF` / `EngineBookmark` / `EngineLink` / `EngineMeta` | 引擎中立的值类型，形状对齐原 pdfium 对应类型，因此换引擎是纯改名 |
 | `PasswordRequiredException` | 密码错误/缺失的统一表示，替代 pdfium 的 `PdfPasswordException` |
 
 **`com.shockwave.*` 已从代码与依赖中彻底移除**（`pdfium-android:1.9.0` 依赖已删，`PdfiumEngine`
 已删）。规则：引擎面之上不得出现任何引擎专有类型。
 
-### pdfium → MuPDF 的六处语义差异（不是改名，改前必读）
+### pdfium → MuPDF 的七处语义差异（不是改名，改前必读）
 
 1. **页生命周期**：MuPDF 每次 `Document.loadPage(i)` 都**新分配**一个 `Page`，而 pdfium 模型是
    「open 一次、反复 render」。`MupdfEngine` 用 `MuDoc.pages`（`SparseArray<Page>`）缓存桥接，
@@ -79,6 +80,11 @@ Android PDF reader ("NO PDF"), package `com.sigpher.nopdf`, forked from [YESPDF]
    （`RenderingHandler` 开页/渲染）与主线程（`getPageSize`、`mapRectToDevice` 命中链接）访问。
    `MuDoc` 的方法都 `synchronized`，但**只在读写表时持锁，绝不跨 `page.run()` 持锁**，
    否则渲染会被测量串行化。
+7. **store 归还是进程级的，且不随页释放**：MuPDF 的字体/图片归 `fz_store` 所有（引用计数化、
+   各线程的 `fz_context` 共享同一份），`fz_drop_page` **不**归还它们。pdfium 没有这一层，所以
+   以前无需考虑。实测占用随**渲染过的页数**线性增长约 2.2MB/页且无平台期——与同时开着几页
+   **无关**。`MupdfEngine` 按 `engine/StoreTrim` 的间隔调 `Context.emptyStore()`，
+   细节与测量见「长文档整页全白」一节。
 
 `MupdfEngine` 另有两处适配：`ParcelFileDescriptor` 需包成 `SeekableInputStream`（MuPDF 无 fd
 入口；自带 `FitzInputStream` 构造器是 private，用不了，自实现那 3 个方法，且避免整份 PDF 读进
@@ -153,7 +159,7 @@ R8 只要改名或删掉其中任何一个，运行时就是 `UnsatisfiedLinkErr
 sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字还在 dex 里
 ```
 
-现有的 29 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
+现有的 36 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
 问题，所以这个检查是唯一能挡住它的自动化关卡。
 
 ### 渲染位图必须是 ARGB_8888（换引擎踩过的最大的坑）
@@ -280,10 +286,7 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
 
 **仍未处理的相关项**（有意为之，都需要真机验证）：
 
-- **MuPDF 的 store 是进程级的、且永不裁剪**。`Context.emptyStore()` / `shrinkStore(int)`
-  在绑定里都有，但它们是**全局**操作，而 `Context` 由所有文档共享（连书架封面渲染也是同一个
-  context）。所以「字体/图片缓存随翻过的页数一起涨」这一半**没有**被这次修复覆盖。若长文档
-  上仍会 OOM，这是下一个该动的地方——但需要先在真机上确认 OOM 仍然存在。
+- ~~MuPDF 的 store 是进程级的、且永不裁剪~~ —— **0.5.4 已修，见下一节。**
 - **滑动过程中的空白没动**。`loadPages()` 在**每一个** scroll 事件上都跑，而它第一件事就是
   `renderingHandler.removeMessages(MSG_RENDER_TASK)`：把队列里**全部**待渲染任务丢掉，再按新
   位置重排。渲染线程画完一个，下一个 scroll 事件就把剩下的全清了。MuPDF 每块都要重跑整页内容
@@ -291,6 +294,64 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
   `onScrollEnd` / `computeFling` 兜底会再 `loadPages()` 一次，最终画面是对的。
   这属于「滑动中不跟手」，与本次修的「滑完还是空白」是两回事，改动会牵动渲染调度，故留待
   单独处理。
+
+### 长文档整页全白 → store 随**渲染过的页数**线性增长（0.5.4 修）
+
+0.5.3 修的是「页对象永不释放」，用户报「快速连续滑动差不多 100 页后还会看到空白」，且这次补了
+两条关键信息：**整页全白**（不是页内缺块）、**只有长文档会**、**滑走再滑回来也不恢复**。
+0.5.3 的 8 页上限对此**完全无效**——所以这次先把病因量出来，不再推理。
+
+**怎么量的**：本机用 MuPDF 1.28.5 的 C 库编了个探针，按应用里那套一模一样的
+`PageRegion` 每轴独立 CTM 逐页渲染 3×4 分块。RSS 不够用——glibc 很少把释放的内存还给 OS，
+真泄漏会藏在平坦的 RSS 后面——所以改成经 `fz_new_context` 的 alloc 钩子装一个**计数分配器**，
+精确统计存活字节。标靶是脚本生成的 200 页 PDF，**每页一张互不相同**的大图（重复图片会被
+MuPDF 按内容哈希缓存一次，测不出 store 增长）。
+
+```
+模式                        200 页后存活增长     峰值      墙钟
+plain（现状）                    438.8 MB      438.9 MB   5.4s
+hold（每页都留着不释放）          438.8 MB      438.9 MB   5.4s   ← 与 plain 逐字节相同
+noclose（只 drop 不 close）      438.8 MB      438.9 MB   5.4s   ← 与 plain 逐字节相同
+emptyStore 每 1 页                7.2 MB        9.6 MB   6.2s
+emptyStore 每 4 页                2.1 MB       11.1 MB   5.6s
+emptyStore 每 8 页                1.0 MB       18.8 MB   5.5s   ← 采用
+emptyStore 每 16 页              18.1 MB       35.8 MB   5.4s
+emptyStore 每 32 页              17.8 MB       70.8 MB   5.4s
+```
+
+**结论与三个被证伪的猜测**：
+
+- **增长的量纲是「渲染过的页数」，不是「同时开着的页数」。** store 线性增长约 **2.2 MB/页**
+  且**没有平台期**（200 页 438.8MB）。`hold` 一行是关键对照：把所有页都留着，峰值与只留一页
+  **完全相同**——所以 0.5.3 的 8 页上限对这个病**一点用都没有**，两者是不同的病。
+  「长文档渲染出空白」若被读成「开着的页太多」，就会修错东西。
+- **漏掉 `fz_close_device` 不是泄漏。** 应用只调 `device.destroy()` 不调 `close()`，而
+  `fz_drop_device` 对未 close 的设备只告警、**不会**去调 `close_device`。看起来像个泄漏，实测
+  `noclose` 与 `plain` 逐字节相同：`fz_draw_drop_device` 本来就把 scale cache、rasterizer、
+  stack 都释放了。**这次差点断言错**——是先量了才没写成 bug report。仍然补上了 `close()`：
+  MuPDF 自己的 `AndroidDrawDevice.drawPage` 就是先 close 再 drop，且不 close 时每个分块都会
+  打一条 native 告警。但它是为了守约，不是为了修泄漏。
+- **「分块被画成白纸」也被排除**：`blank_tiles` 全程只有 2 个，且都是 `#000000`（合成 PDF 的
+  深色区域），不是白；每轴独立 CTM 是对的。0.5.2 那套换算没问题。
+
+**修法**：`engine/StoreTrim`（纯 JVM，有测试）决定多久清一次，`MupdfEngine.closePage` 在
+**真正释放了页**之后按间隔调 `Context.emptyStore()`；`closeDocument` 也清一次，否则关掉一篇长文
+会把它拉进来的字体和图片留给下一篇。间隔 8 来自上面那条曲线：峰值随间隔线性涨，8 是拐点
+（峰值 439MB → 18.8MB，代价 +2% 渲染时间）。**清理不改变画出来的东西**——两种模式下渲染结果
+逐位相同，代价只是重新加载资源。
+
+**为什么全局调用是安全的**（这点本来很可疑）：`Context.emptyStore()` 是 `static native`，走
+`get_context(env)` 拿到**调用线程**的 `fz_context`。看起来是跨线程操作，但
+（1）`fz_clone_context` 是 `memcpy` 整个 context 再 `fz_keep_store_context`，所以各线程的
+context **共享同一个引用计数化的 store**——store 本来就是进程级的；（2）`fz_empty_store`
+在遍历前 `fz_lock(ctx, FZ_LOCK_ALLOC)`，与绑定里其它所有 store 操作同一把锁。所以从渲染线程
+调用是**串行化**的，不引入新竞争。这也纠正了 AGENTS.md 早先「`Context` 由所有文档共享」的说法：
+共享的是 store，context 是每线程一份。
+
+**教训（第三次同类）**：「上一个修复不奏效」不等于「上一个诊断是错的」。0.5.3 的诊断本身是对的
+（页对象确实永不释放），只是**不充分**，而真正的病因在旁边一条未被覆盖的路径上。连续三次都是
+「必要但不充分」，所以这次改成先测量：真机是唯一能暴露这些的地方，但**本机的 C 库能测的，
+就应当在本机测掉**。
 
 ## 性能与稳定性（已修 / 仍存在）
 
@@ -410,8 +471,8 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
 ## Testing
 
 - Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 29 tests, 0 failures.
-- `PageRegionTest` and `PageResidencyTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath.
+- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/StoreTrimTest.kt` (7 cases, store-trim interval and counter reset). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 36 tests, 0 failures.
+- `PageRegionTest`, `PageResidencyTest` and `StoreTrimTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath.
 - **The library module is compiled at Java 7 source level** (it has no `compileOptions`, so AGP 3.4.1 defaults it there, unlike `app` which sets 1.8). No lambdas there, and an anonymous class cannot capture a non-`final` local. The Kotlin sources in the fork do use the 1.8 toolchain, so the two source sets differ.
 
 ## Icons
