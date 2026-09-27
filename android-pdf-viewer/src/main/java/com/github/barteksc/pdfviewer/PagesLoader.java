@@ -19,13 +19,17 @@ import android.graphics.RectF;
 
 import com.github.barteksc.pdfviewer.util.Constants;
 import com.github.barteksc.pdfviewer.util.MathUtils;
+import com.github.barteksc.pdfviewer.util.RenderSchedule;
+import com.github.barteksc.pdfviewer.util.RenderSchedule.Request;
 import com.github.barteksc.pdfviewer.util.Util;
 import com.github.barteksc.pdfviewer.engine.EngineSizeF;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
 import static com.github.barteksc.pdfviewer.util.Constants.Cache.CACHE_SIZE;
+import static com.github.barteksc.pdfviewer.util.Constants.Cache.THUMBNAILS_CACHE_SIZE;
 import static com.github.barteksc.pdfviewer.util.Constants.PRELOAD_OFFSET;
 
 class PagesLoader {
@@ -225,7 +229,6 @@ class PagesLoader {
     }
 
     private void loadVisible() {
-        int parts = 0;
         float scaledPreloadOffset = preloadOffset;
         float firstXOffset = -xOffset + scaledPreloadOffset;
         float lastXOffset = -xOffset - pdfView.getWidth() - scaledPreloadOffset;
@@ -233,77 +236,105 @@ class PagesLoader {
         float lastYOffset = -yOffset - pdfView.getHeight() - scaledPreloadOffset;
 
         List<RenderRange> rangeList = getRenderRangeList(firstXOffset, firstYOffset, lastXOffset, lastYOffset);
-
-        for (RenderRange range : rangeList) {
-            loadThumbnail(range.page);
+        if (rangeList.isEmpty()) {
+            return;
         }
+
+        int currentPage = pdfView.getCurrentPage();
+
+        // 先把这一轮真正要画的东西收集起来，**不在这里入队**——入队顺序就是优先级，
+        // 而优先级是这一轮能不能画出东西的决定因素（见 RenderSchedule）。
+        List<Cell> cells = new ArrayList<>();
+        List<Request> requests = new ArrayList<>();
 
         for (RenderRange range : rangeList) {
             calculatePartSize(range.gridSize);
-            parts += loadPage(range.page, range.leftTop.row, range.rightBottom.row, range.leftTop.col, range.rightBottom.col, CACHE_SIZE - parts);
-            if (parts >= CACHE_SIZE) {
-                break;
-            }
+            collectCells(range, currentPage, cells, requests);
+        }
+        for (RenderRange range : rangeList) {
+            collectThumbnail(range.page, currentPage, cells, requests);
         }
 
-    }
-
-    private int loadPage(int page, int firstRow, int lastRow, int firstCol, int lastCol,
-                         int nbOfPartsLoadable) {
-        int loaded = 0;
-        for (int row = firstRow; row <= lastRow; row++) {
-            for (int col = firstCol; col <= lastCol; col++) {
-                if (loadCell(page, row, col, pageRelativePartWidth, pageRelativePartHeight)) {
-                    loaded++;
-                }
-                if (loaded >= nbOfPartsLoadable) {
-                    return loaded;
-                }
-            }
-        }
-        return loaded;
-    }
-
-    private boolean loadCell(int page, int row, int col, float pageRelativePartWidth, float pageRelativePartHeight) {
-
-        float relX = pageRelativePartWidth * col;
-        float relY = pageRelativePartHeight * row;
-        float relWidth = pageRelativePartWidth;
-        float relHeight = pageRelativePartHeight;
-
-        float renderWidth = partRenderWidth;
-        float renderHeight = partRenderHeight;
-        if (relX + relWidth > 1) {
-            relWidth = 1 - relX;
-        }
-        if (relY + relHeight > 1) {
-            relHeight = 1 - relY;
-        }
-        renderWidth *= relWidth;
-        renderHeight *= relHeight;
-        RectF pageRelativeBounds = new RectF(relX, relY, relX + relWidth, relY + relHeight);
-
-        if (renderWidth > 0 && renderHeight > 0) {
-            if (!pdfView.cacheManager.upPartIfContained(page, pageRelativeBounds, cacheOrder)) {
-                pdfView.renderingHandler.addRenderingTask(page, renderWidth, renderHeight,
-                        pageRelativeBounds, false, cacheOrder, pdfView.isBestQuality(),
-                        pdfView.isAnnotationRendering());
-            }
-
+        // 分块预算取 CACHE_SIZE，与改动前一致；缩略图的预算另算，它不占分块的名额。
+        List<Request> ordered = RenderSchedule.order(requests, CACHE_SIZE, THUMBNAILS_CACHE_SIZE);
+        for (int i = 0; i < ordered.size(); i++) {
+            Cell cell = cells.get(ordered.get(i).index);
             cacheOrder++;
-            return true;
+            pdfView.renderingHandler.addRenderingTask(cell.page, cell.renderWidth, cell.renderHeight,
+                    cell.bounds, cell.thumbnail, cacheOrder, pdfView.isBestQuality(),
+                    pdfView.isAnnotationRendering());
         }
-        return false;
     }
 
-    private void loadThumbnail(int page) {
+    /**
+     * 把这一页还缺的分块收进 {@code cells}/{@code requests}，不入队。
+     *
+     * <p>已经在缓存里的分块只更新一下 LRU 时戳就跳过。改动前这里是「访问一格就算一格」，
+     * 于是**缓存里已有的格子也会把预算吃光**，一整轮可能一个任务都没排进去——滑过去再滑回来
+     * 的那一页恰好是缓存里格子最多的那种。现在预算只花在真正要入队的分块上。
+     */
+    private void collectCells(RenderRange range, int currentPage, List<Cell> cells, List<Request> requests) {
+        for (int row = range.leftTop.row; row <= range.rightBottom.row; row++) {
+            for (int col = range.leftTop.col; col <= range.rightBottom.col; col++) {
+                float relX = pageRelativePartWidth * col;
+                float relY = pageRelativePartHeight * row;
+                float relWidth = pageRelativePartWidth;
+                float relHeight = pageRelativePartHeight;
+
+                float renderWidth = partRenderWidth;
+                float renderHeight = partRenderHeight;
+                if (relX + relWidth > 1) {
+                    relWidth = 1 - relX;
+                }
+                if (relY + relHeight > 1) {
+                    relHeight = 1 - relY;
+                }
+                renderWidth *= relWidth;
+                renderHeight *= relHeight;
+                if (renderWidth <= 0 || renderHeight <= 0) {
+                    continue;
+                }
+
+                RectF pageRelativeBounds = new RectF(relX, relY, relX + relWidth, relY + relHeight);
+                if (!pdfView.cacheManager.upPartIfContained(range.page, pageRelativeBounds, cacheOrder)) {
+                    cells.add(new Cell(range.page, renderWidth, renderHeight, pageRelativeBounds, false));
+                    requests.add(new Request(cells.size() - 1, range.page,
+                            distanceTo(range.page, currentPage), false));
+                }
+                cacheOrder++;
+            }
+        }
+    }
+
+    private void collectThumbnail(int page, int currentPage, List<Cell> cells, List<Request> requests) {
+        if (pdfView.cacheManager.containsThumbnail(page, thumbnailRect)) {
+            return;
+        }
         EngineSizeF pageSize = pdfView.pdfFile.getPageSize(page);
-        float thumbnailWidth = pageSize.getWidth() * Constants.THUMBNAIL_RATIO;
-        float thumbnailHeight = pageSize.getHeight() * Constants.THUMBNAIL_RATIO;
-        if (!pdfView.cacheManager.containsThumbnail(page, thumbnailRect)) {
-            pdfView.renderingHandler.addRenderingTask(page,
-                    thumbnailWidth, thumbnailHeight, thumbnailRect,
-                    true, 0, pdfView.isBestQuality(), pdfView.isAnnotationRendering());
+        cells.add(new Cell(page, pageSize.getWidth() * Constants.THUMBNAIL_RATIO,
+                pageSize.getHeight() * Constants.THUMBNAIL_RATIO, thumbnailRect, true));
+        requests.add(new Request(cells.size() - 1, page, distanceTo(page, currentPage), true));
+    }
+
+    private static int distanceTo(int page, int currentPage) {
+        return Math.abs(page - currentPage);
+    }
+
+    /** 一条待渲染的请求，连同它的渲染参数。 */
+    private static final class Cell {
+
+        final int page;
+        final float renderWidth;
+        final float renderHeight;
+        final RectF bounds;
+        final boolean thumbnail;
+
+        Cell(int page, float renderWidth, float renderHeight, RectF bounds, boolean thumbnail) {
+            this.page = page;
+            this.renderWidth = renderWidth;
+            this.renderHeight = renderHeight;
+            this.bounds = bounds;
+            this.thumbnail = thumbnail;
         }
     }
 

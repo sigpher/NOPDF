@@ -430,7 +430,7 @@ public class PDFView extends RelativeLayout {
         // Stop tasks
         if (renderingHandler != null) {
             renderingHandler.stop();
-            renderingHandler.removeMessages(RenderingHandler.MSG_RENDER_TASK);
+            renderingHandler.clearQueue();
         }
         if (decodingAsyncTask != null) {
             decodingAsyncTask.cancel(true);
@@ -750,11 +750,20 @@ public class PDFView extends RelativeLayout {
             return;
         }
 
-        // Cancel all current tasks
-        renderingHandler.removeMessages(RenderingHandler.MSG_RENDER_TASK);
+        // 划出这一轮的分界：先记下分界，再收集本轮请求，最后只丢掉**分界之前**排的、
+        // 且还没开始画的任务。仍然需要的任务留在渲染队列里、保持原有次序。
+        //
+        // 原来是 `removeMessages(MSG_RENDER_TASK)`——把整条队列清空。这在快速滑动下是致命的，
+        // 而这不是推断：loadPages() 在每一个 touch 事件（DragPinchManager.onScroll）和滑动
+        // 动画的每一帧（AnimationManager.computeFling）上都会跑一次，一帧只有几毫秒，画一格
+        // 却要重跑整页内容，于是渲染线程刚画完一格队列就被整个清掉，永远在原地打转。表现是
+        // 滑动中整页空白，且迟迟不恢复；只有重新载入文档（切换主题按钮走的就是
+        // initPdf → Configurator.load）才会把一切重画一遍。详见 AGENTS.md。
+        renderingHandler.beginPass();
         cacheManager.makeANewSet();
 
         pagesLoader.loadPages();
+        renderingHandler.dropStaleTasks();
         redraw();
     }
 

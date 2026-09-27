@@ -159,7 +159,7 @@ R8 只要改名或删掉其中任何一个，运行时就是 `UnsatisfiedLinkErr
 sh tools/check_release_jni.sh          # 见该脚本，逐个断言 JNI 名字还在 dex 里
 ```
 
-现有的 36 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
+现有的 45 个测试里，`ContentTree` / `CoverBuilder` 刻意不依赖引擎类型，**检测不到**这一类
 问题，所以这个检查是唯一能挡住它的自动化关卡。
 
 ### 渲染位图必须是 ARGB_8888（换引擎踩过的最大的坑）
@@ -287,13 +287,7 @@ openjpeg（JPEG2000）等本应用完全不用的组件，可用 `MUPDF_EXTRA_CF
 **仍未处理的相关项**（有意为之，都需要真机验证）：
 
 - ~~MuPDF 的 store 是进程级的、且永不裁剪~~ —— **0.5.4 已修，见下一节。**
-- **滑动过程中的空白没动**。`loadPages()` 在**每一个** scroll 事件上都跑，而它第一件事就是
-  `renderingHandler.removeMessages(MSG_RENDER_TASK)`：把队列里**全部**待渲染任务丢掉，再按新
-  位置重排。渲染线程画完一个，下一个 scroll 事件就把剩下的全清了。MuPDF 每块都要重跑整页内容
-  （不像 pdfium 有便宜的路径），比上游慢，所以滑动时几乎什么都画不出来。松手后
-  `onScrollEnd` / `computeFling` 兜底会再 `loadPages()` 一次，最终画面是对的。
-  这属于「滑动中不跟手」，与本次修的「滑完还是空白」是两回事，改动会牵动渲染调度，故留待
-  单独处理。
+- ~~滑动过程中的空白~~ —— **已修，见「滑动时整页空白 → 队列每帧被整体清空」一节。**
 
 ### 长文档整页全白 → store 随**渲染过的页数**线性增长（0.5.4 修）
 
@@ -352,6 +346,78 @@ context **共享同一个引用计数化的 store**——store 本来就是进�
 （页对象确实永不释放），只是**不充分**，而真正的病因在旁边一条未被覆盖的路径上。连续三次都是
 「必要但不充分」，所以这次改成先测量：真机是唯一能暴露这些的地方，但**本机的 C 库能测的，
 就应当在本机测掉**。
+
+### 滑动时整页空白 → 队列每帧被整体清空
+
+0.5.4 发布后用户报：**快速滑动多页仍然整页空白，但只要切换一下主题按钮，内容就正常显示**。
+这半句是决定性的：主题按钮走的是 `PreviewActivity` 里 `isNightMode` 的观察者 → `initPdf()` →
+`Configurator.load()`，也就是**重新载入整个文档**。既然「重载」能治好，说明渲染本身没坏、
+内存也不是主因（store 还在），坏的是某个**跨帧留存的状态**——而且只有彻底重载能清掉它。
+
+AGENTS.md 从 0.5.3 起就记着「滑动过程中的空白没动」，但当时只当成「滑动中不跟手」，还写了
+「松手后 `onScrollEnd` / `computeFling` 兜底会再 `loadPages()` 一次，最终画面是对的」——
+**那句话是推理出来的，从来没在真机上核对过**，而用户报的就是它不成立。
+
+**两个调用点决定了整个形状**（不是「偶尔」而是「每帧」）：
+
+| 触发 | 位置 |
+| --- | --- |
+| 每个 touch 事件 | `DragPinchManager.onScroll` → `pdfView.loadPageByOffset()` → `loadPages()` |
+| 滑动动画每一帧 | `AnimationManager.computeFling` → `pdfView.loadPageByOffset()` → `loadPages()` |
+| 自动滚动每次 tick | `PreviewActivity.startAutoScroll` → `app_pdfview.loadPageByOffset()` |
+
+而 `PDFView.loadPages()` 的第一件事是 `renderingHandler.removeMessages(MSG_RENDER_TASK)`：
+**把渲染队列整体清空**，再按新位置重排。一帧只有几毫秒，画一格却要重跑整页内容（换 MuPDF
+之后不再是 pdfium 那种便宜的单块渲染），所以「渲染线程画完一格 → 下一个事件把剩下的全清掉」
+是一个**活锁**：进度被反复清零。滑动越快越严重。
+
+还有第二个问题在**顺序**上。`PagesLoader.loadVisible()` 原来是先给范围内**每一页**排缩略图
+（`for (RenderRange range : rangeList) loadThumbnail(range.page);`），再排分块。于是队首永远是
+缩略图；而缩略图也是**整页重绘**（0.3 缩略比，一样要走完整页内容管线），代价与分块同量级。
+每次重建队列都把它们放回队首，渲染线程每轮都在重画没人看的缩略图，真正的分块一个也轮不到。
+
+> 这里修正一个**我推理错过的点**，留作记录：`PRELOAD_OFFSET` 是 **dp 不是页数**
+> （`Constants.PRELOAD_OFFSET = 20`，经 `Util.getDP` 换算），所以范围内只有 1~3 页、缩略图
+> 只有 1~3 张，不是先前猜的「20 页 × 41 张」。缩略图饿死分块靠的是「排在队首且每帧被重建」，
+> 不是数量。**又一次：先确认量级再下结论。**
+
+改法分三层，缺一层都还是空白：
+
+1. **`util/RenderSchedule`（纯 JVM，有测试）** 决定「这一轮先画什么」：
+   分块优先于缩略图；**只有这一轮真要画分块的页才排它的缩略图**（分块一进缓存就把缩略图完全盖住，
+   再画纯属浪费）；预算只花在分块上。`PagesLoader` 相应改成「先收集、再按 `RenderSchedule`
+   的顺序入队」。
+   - 有意**不**把「最近一页的缩略图」放回队首：那样首屏能有模糊预览，但等于把要修的活锁又请
+     回来（每帧重排一次队首任务）。首屏糊一点和整页空白，前者不值这个风险。
+2. **`RenderingHandler` 去重 + 按轮丢弃**：入队时同一格不排第二次；`PDFView.loadPages()` 改成
+   `beginPass()` → 收集 → `dropStaleTasks()`，**只丢「本轮不再需要且还没开始画」的任务**，
+   仍然需要的留在队列里保持原次序，渲染线程的进度不再被清零。
+   - 丢弃不是可选优化：不丢的话滑过一千页会在队列里积压几万个永远轮不到的消息。
+   - **本轮仍需要的排队任务必须就地把 `generation` 更新到当前轮**，否则会被当成上一轮残留丢掉，
+     那一格就再没人画。（这个坑是写完自查时发现的，`generation` 因此不是 `final`。）
+   - 正在画的任务不丢：它画完照样进缓存。用 `inFlight` 标记判断，因为
+     `Handler.removeMessages(int, Object)` 返回 `void`，从返回值看不出消息是否还在队列里。
+   - 去重的键是新写的 `TileKey`，**不能用 `PagePart`**：它没重写 `hashCode`（拿它当 map 键，
+     每 new 一个都算不同键，去重直接失效），而且它的 `equals` **不看 thumbnail**——横滑整页翻页
+     时缩略图尺寸就是整页大小，恰好与「整页一块」的分块重合，混为一谈会把 0.3 缩略图拉伸铺满
+     整页。
+   - 加锁次序固定为 `queueLock` → MessageQueue 内部锁；渲染线程取 `queueLock` 时不持有后者，
+     不会死锁。
+3. **预算只算真正入队的分块**。原来 `loadCell` 对**已经在缓存里**的格子也返回 true，于是已缓存的
+   格子把预算吃光，一整轮可能一个任务都没排进去。滑过去再滑回来的那一页恰好是缓存里格子最多的
+   那种，最容易撞上。
+
+**仍然无法在本机验证的部分**：本机没有 emulator / system image / 真机，以上全部是读代码 +
+算出来的，**没有一条是在真机跑出来的**。能说的是机制已闭环（不再有每帧清零的路径、队首不再是
+缩略图）；不能说的是「滑动时一定跟手」——MuPDF 每格重跑整页内容，一页 30~50 格、单机每格
+若干毫秒，滑动中**必然**仍会落后于手指若干帧，这是吞吐问题，调度只能让它「一直在画」而不是
+「一下全出」。若真机上仍觉得跟不上，下一步该动的是 `PART_SIZE`（256 → 更小）或缩略图预渲染，
+而不是再改调度。
+
+**教训（第四次同类）**：0.5.3 结尾那句「松手后最终画面是对的」是**推理**，不是观测，而且推理
+所依赖的那句「一帧内画不完一格」当时也没有任何数据支撑。**把「应该会恢复」写进文档，等于给
+下一个读文档的人（包括我自己）埋一个未验证的假设**——0.5.4 就是照着它判断「这次只修了滑动中」
+而留下的。用户的一句「切主题就好了」比那一整段推理更有信息量。
 
 ## 性能与稳定性（已修 / 仍存在）
 
@@ -471,8 +537,8 @@ context **共享同一个引用计数化的 store**——store 本来就是进�
 ## Testing
 
 - Only `junit:junit:4.12` is on the test classpath: **no Robolectric, no Mockito, and no `testOptions { unitTests.returnDefaultValues }`** anywhere. Any Android API touched from a unit test throws, so new unit tests must be pure JVM (extract the logic first, as `ContentTree` does).
-- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry) and `app/src/test/java/com/github/barteksc/pdfviewer/engine/StoreTrimTest.kt` (7 cases, store-trim interval and counter reset). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 36 tests, 0 failures.
-- `PageRegionTest`, `PageResidencyTest` and `StoreTrimTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath.
+- Real suites (all pure-JVM, Chinese backtick method names): `app/src/test/.../preview/ContentTreeTest.kt` (8 cases, TOC expand/collapse), `app/src/test/.../common/CoverBuilderTest.kt` (7 cases, bookshelf cover grouping), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageRegionTest.kt` (6 cases, page-relative tile → page-point → device transform), `app/src/test/java/com/github/barteksc/pdfviewer/engine/PageResidencyTest.kt` (7 cases, engine page-residency cap and failure-flag expiry), `app/src/test/java/com/github/barteksc/pdfviewer/engine/StoreTrimTest.kt` (7 cases, store-trim interval and counter reset) and `app/src/test/java/com/github/barteksc/pdfviewer/util/RenderScheduleTest.kt` (9 cases, render-request priority: tiles before thumbnails, nearest first, budget). `ExampleUnitTest`/`ExampleInstrumentedTest` are placeholders. Total 45 tests, 0 failures.
+- `PageRegionTest`, `PageResidencyTest` and `StoreTrimTest` live in the `app` module but exercise the **library** module's `engine/` classes, which is why those classes are `public` and Android-free (no `Bitmap`/`Rect`/`Matrix` — their methods throw outside a framework). `implementation project(':android-pdf-viewer')` does put the library on the unit-test compile classpath. `RenderSchedule` follows the same rule and lives in `util/` rather than `engine/`, because it is scheduler policy, not an engine concern.
 - **The library module is compiled at Java 7 source level** (it has no `compileOptions`, so AGP 3.4.1 defaults it there, unlike `app` which sets 1.8). No lambdas there, and an anonymous class cannot capture a non-`final` local. The Kotlin sources in the fork do use the 1.8 toolchain, so the two source sets differ.
 
 ## Icons

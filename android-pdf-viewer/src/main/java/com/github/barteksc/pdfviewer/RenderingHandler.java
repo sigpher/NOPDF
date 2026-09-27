@@ -26,6 +26,11 @@ import android.util.Log;
 import com.github.barteksc.pdfviewer.exception.PageRenderingException;
 import com.github.barteksc.pdfviewer.model.PagePart;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * A {@link Handler} that will process incoming {@link RenderingTask} messages
  * and alert {@link PDFView#onBitmapRendered(PagePart)} when the portion of the
@@ -43,20 +48,163 @@ class RenderingHandler extends Handler {
 
     private boolean running = false;
 
+    /**
+     * 已经排进队列、但还没画完的任务，按入队顺序。
+     *
+     * <p>这张表取代了原先「{@code PDFView.loadPages()} 一跑就把整条队列清空」的做法。
+     * 整体清空在快速滑动下是致命的，而这不是猜测：{@code loadPages()} 在**每一个** touch 事件
+     * （{@code DragPinchManager.onScroll}）和滑动动画的**每一帧**
+     * （{@code AnimationManager.computeFling}）上都会跑一次，一帧只有几毫秒，画一格却要重跑
+     * 整页内容（换 MuPDF 之后不再是 pdfium 那种便宜的单块渲染）。于是渲染线程刚画完一格，
+     * 队列就被下一次调用整个清掉，它永远在原地重做队首那几个任务——滑动中整页空白，而只有
+     * 重新载入文档（切换主题按钮走的就是 initPdf → load）才会把一切重画一遍。
+     *
+     * <p>改为：入队时去重（同一格不排两次），每轮结束时只丢掉**这一轮不再需要**的任务
+     * （{@link #dropStaleTasks()}）。仍然需要的任务留在队列里、保持原有次序，渲染线程的
+     * 进度就不再被反复清零。丢弃这一步不是可选优化：不丢的话，滑过一千页就会在队列里
+     * 积压几万个永远轮不到、也永远不会释放的消息。
+     *
+     * <p>主线程（{@code loadPages}）与渲染线程（{@code handleMessage}）都要动这张表，所以
+     * 每次访问都在 {@link #queueLock} 内。加锁次序固定为 queueLock → MessageQueue 的内部锁；
+     * 渲染线程是在 {@code handleMessage} 里取 queueLock，那一刻并不持有后者，因此不会死锁。
+     */
+    private final Map<TileKey, RenderingTask> pending = new LinkedHashMap<>();
+
+    private final Object queueLock = new Object();
+
+    /**
+     * 每 {@link #beginPass()} 加一。带更小 generation 的排队任务就是「上一轮剩下的」，
+     * 由 {@link #dropStaleTasks()} 清掉。
+     */
+    private int generation;
+
     RenderingHandler(Looper looper, PDFView pdfView) {
         super(looper);
         this.pdfView = pdfView;
     }
 
+    /** 划出新一轮请求的分界。见 {@link #dropStaleTasks()}。 */
+    void beginPass() {
+        synchronized (queueLock) {
+            generation++;
+        }
+    }
+
     void addRenderingTask(int page, float width, float height, RectF bounds, boolean thumbnail, int cacheOrder, boolean bestQuality, boolean annotationRendering) {
-        RenderingTask task = new RenderingTask(width, height, bounds, page, thumbnail, cacheOrder, bestQuality, annotationRendering);
-        Message msg = obtainMessage(MSG_RENDER_TASK, task);
-        sendMessage(msg);
+        TileKey key = new TileKey(page, bounds, thumbnail);
+        synchronized (queueLock) {
+            RenderingTask existing = pending.get(key);
+            if (existing != null) {
+                // 已经在队列里、或者正在画：重复入队只会让同一格被画两遍，并让队列越排越长。
+                // 但**必须**把它的轮次更新到当前轮——否则本轮仍然需要的任务会被
+                // dropStaleTasks 当成上一轮的残留清掉，那一格就再也没人画了。
+                existing.generation = generation;
+                return;
+            }
+            RenderingTask task = new RenderingTask(key, width, height, bounds, page, thumbnail, cacheOrder, bestQuality, annotationRendering, generation);
+            pending.put(key, task);
+            // sendMessage 不阻塞，故可以放在锁内；见 pending 字段注释里关于加锁次序的说明。
+            sendMessage(obtainMessage(MSG_RENDER_TASK, task));
+        }
+    }
+
+    /**
+     * 丢掉「本轮不再需要、且还没开始画」的任务。仍然需要的任务留在队列里、保持原有次序。
+     *
+     * <p>由 {@code PDFView.loadPages()} 在收集完本轮请求之后立刻调用。
+     */
+    void dropStaleTasks() {
+        List<RenderingTask> stale = new ArrayList<>();
+        int current;
+        synchronized (queueLock) {
+            current = generation;
+            for (Map.Entry<TileKey, RenderingTask> entry : pending.entrySet()) {
+                RenderingTask task = entry.getValue();
+                // 正在画的那一条不用管：它画完照样进缓存，而它的 pending 条目由 handleMessage
+                // 清掉。Handler.removeMessages(int, Object) 返回 void，没法从返回值上看出消息
+                // 是否还在队列里，所以这里自己记一个 inFlight。
+                if (task.generation < current && !task.inFlight) {
+                    stale.add(task);
+                }
+            }
+            for (int i = 0; i < stale.size(); i++) {
+                pending.remove(stale.get(i).key);
+            }
+        }
+
+        for (int i = 0; i < stale.size(); i++) {
+            removeMessages(MSG_RENDER_TASK, stale.get(i));
+        }
+    }
+
+    /** 全部丢弃。{@code PDFView.recycle()} 用。 */
+    void clearQueue() {
+        removeMessages(MSG_RENDER_TASK);
+        synchronized (queueLock) {
+            pending.clear();
+            generation++;
+        }
+    }
+
+    /**
+     * 标识「要画哪一格」。与 {@code PagePart} 的区别有二：{@code PagePart} 没重写
+     * {@code hashCode}，拿它当 map 的键会让去重彻底失效（每 new 一个都算不同的键）；而且
+     * {@code PagePart.equals} 不看 thumbnail——横滑整页翻页时缩略图尺寸就是整页大小，恰好与
+     * 「整页一块」的分块重合，两者混为一谈会把 0.3 缩略图拉伸铺满整页。
+     */
+    private static final class TileKey {
+
+        private final int page;
+        private final boolean thumbnail;
+        private final float left;
+        private final float top;
+        private final float right;
+        private final float bottom;
+        private final int hash;
+
+        TileKey(int page, RectF bounds, boolean thumbnail) {
+            this.page = page;
+            this.thumbnail = thumbnail;
+            this.left = bounds.left;
+            this.top = bounds.top;
+            this.right = bounds.right;
+            this.bottom = bounds.bottom;
+
+            int h = page;
+            h = 31 * h + (thumbnail ? 1231 : 1237);
+            h = 31 * h + Float.floatToIntBits(left);
+            h = 31 * h + Float.floatToIntBits(top);
+            h = 31 * h + Float.floatToIntBits(right);
+            h = 31 * h + Float.floatToIntBits(bottom);
+            this.hash = h;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof TileKey)) {
+                return false;
+            }
+            TileKey other = (TileKey) obj;
+            return page == other.page && thumbnail == other.thumbnail
+                    && left == other.left && top == other.top
+                    && right == other.right && bottom == other.bottom;
+        }
     }
 
     @Override
     public void handleMessage(Message message) {
         final RenderingTask task = (RenderingTask) message.obj;
+        synchronized (queueLock) {
+            task.inFlight = true;
+        }
         try {
             final PagePart part = proceed(task);
             if (part != null) {
@@ -94,6 +242,12 @@ class RenderingHandler extends Handler {
                     pdfView.onPageError(new PageRenderingException(task.page, t));
                 }
             });
+        } finally {
+            // 无论画成、画失败还是抛异常，这一格都不再算「排队中」，下一轮可以重新排它。
+            // 放在画完之后而不是取出来的时候，是为了不让同一格在画的同时被再排一遍（会画两遍）。
+            synchronized (queueLock) {
+                pending.remove(task.key);
+            }
         }
     }
 
@@ -166,6 +320,20 @@ class RenderingHandler extends Handler {
 
     private class RenderingTask {
 
+        final TileKey key;
+
+        /**
+         * 最近一次被请求时的 {@link RenderingHandler#generation}，用来判断它属于哪一轮。
+         *
+         * <p>不是 final：本轮仍然需要的排队任务会被 {@code addRenderingTask} 就地更新到当前轮
+         * （见那里的注释），否则它会被 {@link #dropStaleTasks()} 误当成上一轮的残留丢掉。
+         * 只在 {@link #queueLock} 内读写。
+         */
+        int generation;
+
+        /** 已被取出来、正在画。只在 {@link #queueLock} 内读写。 */
+        boolean inFlight;
+
         float width, height;
 
         RectF bounds;
@@ -180,7 +348,9 @@ class RenderingHandler extends Handler {
 
         boolean annotationRendering;
 
-        RenderingTask(float width, float height, RectF bounds, int page, boolean thumbnail, int cacheOrder, boolean bestQuality, boolean annotationRendering) {
+        RenderingTask(TileKey key, float width, float height, RectF bounds, int page, boolean thumbnail, int cacheOrder, boolean bestQuality, boolean annotationRendering, int generation) {
+            this.key = key;
+            this.generation = generation;
             this.page = page;
             this.width = width;
             this.height = height;
